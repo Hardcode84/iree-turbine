@@ -11,7 +11,7 @@ from .constraints import (
 )
 from .codegen import WaveEmitter
 from .expansion import expand_graph
-from ..lang import Grid
+from ..lang import Grid, IndexMapping
 from ..ops import wave_ops
 from .._support.indexing import IndexingContext
 from .._support.tracing import (

@@ -10,6 +10,7 @@ from .constraints import (
     WorkgroupConstraint,
     get_grid_shape,
 )
+import numpy as np
 from sympy import Symbol
 from sympy.core.expr import Expr
 from .._support.shaped_type import ShapedType
@@ -167,11 +168,28 @@ def _reduction_proxy(axis, init_args):
     return decorator
 
 
-def _read_proxy(memory, elements_per_thread=None):
+def _read_proxy(memory, elements_per_thread=None, mapping=None, shape=None):
+    if mapping:
+        assert shape
+        mapping_func = mapping.mapping_func
+        res = torch.zeros(shape)
+        for index in np.ndindex(*shape):
+            res[index] = memory[mapping_func(*index)]
+
+        return res
+
     return memory.clone()
 
 
-def _write_proxy(src, dst, elements_per_thread=None):
+def _write_proxy(src, dst, elements_per_thread=None, mapping=None, shape=None):
+    if mapping:
+        assert shape
+        mapping_func = mapping.mapping_func
+        for index in np.ndindex(*shape):
+            dst[index] = src[mapping_func(*index)]
+
+        return
+
     dst[:] = src
 
 
