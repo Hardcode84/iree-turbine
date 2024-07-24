@@ -171,6 +171,7 @@ def _reduction_proxy(axis, init_args):
 
     return decorator
 
+
 def _read_proxy(memory, elements_per_thread=None, mapping=None, shape=None):
     if mapping:
         assert shape
