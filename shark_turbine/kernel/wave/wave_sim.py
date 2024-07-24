@@ -90,11 +90,15 @@ def _resolve_symbols(func, symbols):
     old_closure = func.__closure__
     new_closure = None
 
+    sym_subs = [(key, val) for key, val in symbols.items() if isinstance(key, Symbol)]
+
     def resolve_impl(val):
         if isinstance(val, Symbol):
             return symbols.get(val, None)
         elif isinstance(val, Expr):
-            return val.subs(symbols)
+            return val.subs(sym_subs)
+        elif isinstance(val, tkw.IndexMapping):
+            return tkw.IndexMapping(_resolve_symbols(val.mapping_func, symbols))
 
         try:
             return symbols.get(val, None)
@@ -167,26 +171,28 @@ def _reduction_proxy(axis, init_args):
 
     return decorator
 
-
 def _read_proxy(memory, elements_per_thread=None, mapping=None, shape=None):
     if mapping:
         assert shape
         mapping_func = mapping.mapping_func
         res = torch.zeros(shape)
         for index in np.ndindex(*shape):
-            res[index] = memory[mapping_func(*index)]
+            mapped = mapping_func(*index)
+            # print(index, mapped)
+            if all(i >= 0 and i < b for i, b in zip(mapped, memory.shape)):
+                res[index] = memory[mapped]
 
         return res
 
     return memory.clone()
 
 
-def _write_proxy(src, dst, elements_per_thread=None, mapping=None, shape=None):
+def _write_proxy(src, dst, elements_per_thread=None, mapping=None):
     if mapping:
-        assert shape
         mapping_func = mapping.mapping_func
-        for index in np.ndindex(*shape):
-            dst[index] = src[mapping_func(*index)]
+        for index in np.ndindex(*src.shape):
+            mapped = mapping_func(*index)
+            dst[mapped] = src[index]
 
         return
 
