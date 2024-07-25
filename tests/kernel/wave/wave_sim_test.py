@@ -200,21 +200,14 @@ def test_igemm_conv(n, c, nf, stride):
     convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
     convRef.weight = torch.nn.Parameter(we)
     out_ref = convRef(x).detach()
-    print("src")
-    print(x)
-    print("weight")
-    print(we)
-    print("res")
-    print(out_ref)
 
     sym = tkl.sym
     N, C, H, W = sym.N, sym.C, sym.H, sym.W
     NF, HF, WF = sym.NF, sym.HF, sym.WF
-    KB = sym.KB
+
     H_OUT = (H + 2 * padding - HF) // stride + 1
     W_OUT = (W + 2 * padding - WF) // stride + 1
     SZ_OUT = H_OUT * W_OUT
-    # SZ_OUT_N = SZ_OUT *
 
     x_mapping = tkw.IndexMapping(
         lambda i, j: (
@@ -259,7 +252,6 @@ def test_igemm_conv(n, c, nf, stride):
         we: tkl.Memory[NF, C, HF, WF, ADDRESS_SPACE, tkl.f16],
         out: tkl.Memory[N, NF, H_OUT, W_OUT, ADDRESS_SPACE, tkl.f32],
     ):
-        print("-=-=-=-=-=-=-")
         c_reg = tkl.Register[M, NF, tkl.f32](0.0)
 
         @tkw.reduction(K, init_args=[c_reg])
@@ -270,16 +262,13 @@ def test_igemm_conv(n, c, nf, stride):
                 shape=(M, K),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD,
             )
-            print(a_reg)
             b_reg = tkw.read(
                 we,
                 mapping=w_mapping,
                 shape=(NF, K),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD,
             )
-            print(b_reg)
             acc = tkw.mma(a_reg, b_reg, acc)
-            print(acc)
             return acc
 
         tkw.write(
@@ -288,5 +277,4 @@ def test_igemm_conv(n, c, nf, stride):
 
     out = torch.zeros_like(out_ref)
     conv(x, we, out)
-    print(out)
     assert_allclose(out, out_ref, rtol=1e-05, atol=1e-05)
