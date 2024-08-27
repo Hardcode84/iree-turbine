@@ -249,6 +249,7 @@ def test_im2col():
     b = torch.zeros(res_shape, dtype=torch.float16)
 
     im2col = torch.nn.Unfold(kernel_size=(hf, wf), padding=padding, stride=stride)
+    expected = im2col(a)[0, :, :].T
 
     with tk.gen.TestLaunchContext(
         {
@@ -265,4 +266,4 @@ def test_im2col():
         run_config=config,
     ):
         test(a, b)
-        assert_allclose(im2col(a)[0, :, :], b)
+        assert_allclose(b, expected)
