@@ -6,6 +6,7 @@ from numpy.testing import assert_allclose
 import pytest
 import sympy
 import os
+import torch
 
 _run_e2e = int(os.environ.get("WAVE_RUN_E2E_TESTS", 0))
 
@@ -246,6 +247,9 @@ def test_im2col():
     res_shape = (h_out * w_out * n, hf * wf * c)
     a = torch.randn((n, c, h, w), dtype=torch.float16)
     b = torch.zeros(res_shape, dtype=torch.float16)
+
+    im2col = torch.nn.Unfold(kernel_size=(wf, hf), padding=padding, stride=stride)
+
     with tk.gen.TestLaunchContext(
         {
             N: n,
@@ -261,4 +265,4 @@ def test_im2col():
         run_config=config,
     ):
         test(a, b)
-        assert_allclose(a, b)
+        assert_allclose(im2col(a), b)
