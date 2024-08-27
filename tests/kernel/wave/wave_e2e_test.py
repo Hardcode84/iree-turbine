@@ -248,7 +248,7 @@ def test_im2col():
     a = torch.randn((n, c, h, w), dtype=torch.float16)
     b = torch.zeros(res_shape, dtype=torch.float16)
 
-    im2col = torch.nn.Unfold(kernel_size=(wf, hf), padding=padding, stride=stride)
+    im2col = torch.nn.Unfold(kernel_size=(hf, wf), padding=padding, stride=stride)
 
     with tk.gen.TestLaunchContext(
         {
