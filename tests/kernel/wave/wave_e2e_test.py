@@ -180,3 +180,85 @@ def test_transpose_write(shape):
     ):
         test(a, b)
         assert_allclose(a.T, b)
+
+
+@require_e2e
+def test_im2col():
+    n, c, h, w = 1, 4, 5, 5  # Image.
+    cf, hf, wf = c, 2, 2  # Filters.
+    padding = 0
+    stride = 1
+
+    sym = tkl.sym
+    ADDRESS_SPACE = sym.ADDRESS_SPACE
+
+    N, C, H, W = sym.N, sym.C, sym.H, sym.W
+    NF, HF, WF = sym.NF, sym.HF, sym.WF
+
+    H_OUT = (H + 2 * padding - HF) // stride + 1
+    W_OUT = (W + 2 * padding - WF) // stride + 1
+    SZ_OUT = H_OUT * W_OUT
+
+    K = HF * WF * C
+    M = SZ_OUT * N
+
+    wave_size = 64
+    BLOCK_K = hf * wf * c
+    BLOCK_M = sympy.Min(M, 256 / BLOCK_K)
+    ELEMS_PER_THREAD = BLOCK_M / wave_size
+
+    i = tkw.IndexMapping.iterator(0)
+    j = tkw.IndexMapping.iterator(1)
+
+    mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={
+            N: i // SZ_OUT,
+            C: j // (HF * WF),
+            H: (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
+            W: (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
+        },
+        outputs={M: i, K: j},
+    )
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: BLOCK_M, K: BLOCK_K},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+
+    @tkw.wave(constraints)
+    def test(
+        x: tkl.Memory[N, C, H, W, ADDRESS_SPACE, tkl.f16],
+        b: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
+    ):
+        res = tkw.read(a, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
+        tkw.write(res, b, elements_per_thread=ELEMS_PER_THREAD)
+
+    config = {"backend": "rocm", "device": "hip", "target": "gfx942"}
+
+    h_out = (h + 2 * padding - hf) // stride + 1
+    w_out = (w + 2 * padding - wf) // stride + 1
+    res_shape = (h_out * w_out * n, hf * wf * c)
+    a = torch.randn((n, c, h, w), dtype=torch.float16)
+    b = torch.zeros(res_shape, dtype=torch.float16)
+    with tk.gen.TestLaunchContext(
+        {
+            N: n,
+            C: c,
+            W: w,
+            H: h,
+            WF: wf,
+            HF: hf,
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run=True,
+        run_config=config,
+    ):
+        test(a, b)
+        assert_allclose(a, b)
