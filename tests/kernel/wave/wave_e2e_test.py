@@ -200,8 +200,10 @@ def test_im2col():
     W_OUT = (W + 2 * padding - WF) // stride + 1
     SZ_OUT = H_OUT * W_OUT
 
-    K = HF * WF * C
-    M = SZ_OUT * N
+    # K = HF * WF * C
+    # M = SZ_OUT * N
+    M = sym.M
+    K = sym.K
 
     wave_size = 64
     BLOCK_K = hf * wf * c
@@ -230,7 +232,10 @@ def test_im2col():
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
+    constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 1)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+    constraints += [tkw.WaveConstraint(K, BLOCK_K)]
+    # constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     @tkw.wave(constraints)
     def test(
@@ -259,6 +264,8 @@ def test_im2col():
             H: h,
             WF: wf,
             HF: hf,
+            M: res_shape[0],
+            K: res_shape[1],
             ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
         },
         canonicalize=True,
