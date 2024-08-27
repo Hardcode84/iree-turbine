@@ -185,7 +185,7 @@ def test_transpose_write(shape):
 
 @require_e2e
 def test_im2col():
-    n, c, h, w = 1, 4, 5, 5  # Image.
+    n, c, h, w = 1, 2, 4, 4  # Image.
     cf, hf, wf = c, 2, 2  # Filters.
     padding = 0
     stride = 1
@@ -205,8 +205,8 @@ def test_im2col():
 
     wave_size = 64
     BLOCK_K = hf * wf * c
-    BLOCK_M = sympy.Min(M, 256 / BLOCK_K)
-    ELEMS_PER_THREAD = BLOCK_K * BLOCK_M / wave_size
+    BLOCK_M = sympy.Min(M, 256 // BLOCK_K)
+    ELEMS_PER_THREAD = BLOCK_K * BLOCK_M // wave_size
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -265,4 +265,4 @@ def test_im2col():
         run_config=config,
     ):
         test(a, b)
-        assert_allclose(im2col(a), b)
+        assert_allclose(im2col(a)[0, :, :], b)
