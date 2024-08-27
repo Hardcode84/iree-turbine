@@ -205,7 +205,7 @@ def test_im2col():
     wave_size = 64
     BLOCK_K = hf * wf * c
     BLOCK_M = sympy.Min(M, 256 / BLOCK_K)
-    ELEMS_PER_THREAD = BLOCK_M / wave_size
+    ELEMS_PER_THREAD = BLOCK_K * BLOCK_M / wave_size
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -233,7 +233,7 @@ def test_im2col():
 
     @tkw.wave(constraints)
     def test(
-        x: tkl.Memory[N, C, H, W, ADDRESS_SPACE, tkl.f16],
+        a: tkl.Memory[N, C, H, W, ADDRESS_SPACE, tkl.f16],
         b: tkl.Memory[M, K, ADDRESS_SPACE, tkl.f16],
     ):
         res = tkw.read(a, mapping=mapping, elements_per_thread=ELEMS_PER_THREAD)
