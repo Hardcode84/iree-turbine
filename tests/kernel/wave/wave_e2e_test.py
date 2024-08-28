@@ -218,8 +218,8 @@ def test_im2col():
         inputs={
             N: i // SZ_OUT,
             C: j // (HF * WF),
-            H: (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
-            W: (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
+            H: (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
+            W: (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
         },
         outputs={M: i, K: j},
     )
