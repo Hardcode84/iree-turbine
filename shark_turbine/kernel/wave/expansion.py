@@ -113,6 +113,9 @@ def set_node_index(
     on the operand.
     """
     hardware_constraint = [c for c in constraints if isinstance(c, HardwareConstraint)]
+    workgroup_constraints = [
+        c for c in constraints if isinstance(c, WorkgroupConstraint)
+    ]
     other_constraints = [
         c for c in constraints if not isinstance(c, HardwareConstraint)
     ]
@@ -129,15 +132,28 @@ def set_node_index(
                 and isinstance(custom, MMA)
             )
 
+            vector_check = (
+                isinstance(constraint, HardwareConstraint)
+                and constraint.vector_shapes is not None
+                and hasattr(custom, "elements_per_thread")
+            )
+
             constraint_check = (
                 not isinstance(constraint, HardwareConstraint) and dim == constraint.dim
             )
 
-            if (not mma_check) and (not constraint_check):
+            if (not (mma_check or vector_check)) and (not constraint_check):
                 continue
 
             if isinstance(constraint, HardwareConstraint):
-                index_seq = constraint.apply(mma_index[dim])
+                elements_per_thread = getattr(custom, "elements_per_thread", None)
+                if constraint.vector_shapes is not None:
+                    constraint_index = [
+                        c.workgroup_dim for c in workgroup_constraints if c.dim == dim
+                    ][0]
+                else:
+                    constraint_index = mma_index[dim]
+                index_seq = constraint.apply(constraint_index, dim, elements_per_thread)
             else:
                 if index_seq is None:
                     index_seq = constraint.apply()
