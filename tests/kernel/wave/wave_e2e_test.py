@@ -185,6 +185,8 @@ def test_transpose_write(shape):
 
 @require_e2e
 def test_im2col():
+    # TODO: we don't support unaligned access at the moment so all sizes must
+    # be aligned to WG/Wave sizes, c * hw * wf == 8 and number of windoes == 64
     n, c, h, w = 1, 2, 9, 9  # Image.
     cf, hf, wf = c, 2, 2  # Filters.
     padding = 0
@@ -205,6 +207,8 @@ def test_im2col():
     M = sym.M
     K = sym.K
 
+    # We unroll K dimension according to ELEMS_PER_THREAD value.
+    # i.e. for K==8 we will have 2 vector.gather
     wave_size = 64
     BLOCK_K = hf * wf * c
     BLOCK_M = 64
@@ -235,6 +239,9 @@ def test_im2col():
     constraints += [tkw.WorkgroupConstraint(K, BLOCK_K, 1)]
     constraints += [tkw.WaveConstraint(M, BLOCK_M)]
     constraints += [tkw.WaveConstraint(K, BLOCK_K)]
+    # TODO: TilingConstraint doesn't work without actual reduction loop, instead
+    # we treat K as WG '1' dimension, but corresponding WG size will be always
+    # equal to 1.
     # constraints += [tkw.TilingConstraint(K, BLOCK_K)]
 
     @tkw.wave(constraints)
