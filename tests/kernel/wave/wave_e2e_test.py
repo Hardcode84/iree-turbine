@@ -267,8 +267,13 @@ def test_im2col():
     # Each WG will process 64 windows.
     wave_size = 64
     BLOCK_K = hf * wf * c
+<<<<<<< HEAD
     BLOCK_M = 64
     ELEMS_PER_THREAD = 4
+=======
+    BLOCK_M = 64  # sympy.Min(M, 256 // BLOCK_K)
+    ELEMS_PER_THREAD = 1  # BLOCK_K * BLOCK_M // wave_size
+>>>>>>> 8e68c2e (fixes)
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
