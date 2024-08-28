@@ -208,7 +208,8 @@ def test_im2col():
     K = sym.K
 
     # We unroll K dimension according to ELEMS_PER_THREAD value.
-    # i.e. for K==8 we will have 2 vector.gather
+    # i.e. for K==8 we will have 2 vector.gather's.
+    # Each WG will process 64 windows.
     wave_size = 64
     BLOCK_K = hf * wf * c
     BLOCK_M = 64
