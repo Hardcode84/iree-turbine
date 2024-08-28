@@ -186,7 +186,7 @@ def test_transpose_write(shape):
 @require_e2e
 def test_im2col():
     # TODO: we don't support unaligned access at the moment so all sizes must
-    # be aligned to WG/Wave sizes, c * hw * wf == 8 and number of windoes == 64
+    # be aligned to WG/Wave sizes, c * hw * wf == 8 and number of windows == 64
     n, c, h, w = 1, 2, 9, 9  # Image.
     cf, hf, wf = c, 2, 2  # Filters.
     padding = 0
