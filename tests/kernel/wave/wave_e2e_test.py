@@ -207,8 +207,8 @@ def test_im2col():
 
     wave_size = 64
     BLOCK_K = hf * wf * c
-    BLOCK_M = 64  # sympy.Min(M, 256 // BLOCK_K)
-    ELEMS_PER_THREAD = 1  # BLOCK_K * BLOCK_M // wave_size
+    BLOCK_M = 64
+    ELEMS_PER_THREAD = 4
 
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
@@ -228,7 +228,7 @@ def test_im2col():
         tkw.HardwareConstraint(
             threads_per_wave=wave_size,
             waves_per_block=(1, 1, 1),
-            vector_shapes={M: BLOCK_M, K: 1},
+            vector_shapes={M: BLOCK_M, K: ELEMS_PER_THREAD},
         )
     ]
     constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 0)]
