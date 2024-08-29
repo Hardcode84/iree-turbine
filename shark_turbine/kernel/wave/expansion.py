@@ -172,7 +172,7 @@ def set_node_index(
                             0
                             if not is_contiguous_dim(
                                 dim,
-                                custom.type.symbolic_shape,
+                                custom.indexing_dims,
                                 constraint.vector_shapes,
                             )
                             else elements_per_thread
