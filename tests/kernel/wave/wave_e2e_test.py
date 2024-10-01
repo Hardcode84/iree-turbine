@@ -593,7 +593,7 @@ def test_im2col_mma():
 @pytest.mark.parametrize("mem_space", [GLOBAL_ADDRESS_SPACE, SHARED_ADDRESS_SPACE])
 def test_igemm_conv(n, c, nf, stride, mem_space):
     h, w = 5, 5  # Image.
-    cf, hf, wf = c, 2, 2  # Filters.
+    cf, hf, wf = c, 3, 3  # Filters.
     padding = 0  # TODO: only pad=0 is supported for now
 
     torch.manual_seed(1)
