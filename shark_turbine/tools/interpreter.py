@@ -193,10 +193,6 @@ class Interpreter:
                     shape = op.result.type.shape
                     value = torch.ones(shape, dtype=bool)
                 case vector_d.GatherOp:
-                    # mtype = op.result.type
-                    # shape = mtype.shape
-                    # dtype = mtype.element_type
-                    # value = torch.zeros(shape, dtype=self.get_dtype(dtype))
                     load_indices = []
                     for index in op.indices:
                         load_indices.append(self.symbol_table[index])
