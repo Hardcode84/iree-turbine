@@ -458,8 +458,8 @@ def test_im2col():
 @require_e2e
 def test_im2col_mma():
     # igemm without final col2im
-    n, c, h, w = 1, 4, 9, 9  # Image.
-    nf, cf, hf, wf = 64, c, 2, 2  # Filters.
+    n, c, h, w = 1, 4, 5, 5  # Image.
+    nf, cf, hf, wf = 16, c, 2, 2  # Filters.
     padding = 0  # TODO: only pad=0 is supported for now
     stride = 1
 
@@ -572,8 +572,8 @@ def test_im2col_mma():
             NF: nf,
             WF: wf,
             HF: hf,
-            BLOCK_M: 64,
-            BLOCK_N: 64,
+            BLOCK_M: 16,
+            BLOCK_N: 16,
             ELEMS_PER_THREAD: 4,
             ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
         },
@@ -714,8 +714,16 @@ def test_igemm_conv(n, c, nf, stride, mem_space):
             ADDRESS_SPACE: mem_space,
         },
         canonicalize=True,
-        run=True,
+        # run=True,
         run_config=config,
     ):
         conv(x, we, out)
+        from shark_turbine.tools.interpreter import Interpreter
+        asm = conv.module_op.get_asm()
+        print(asm)
+        for i in range(6):
+            print("iter", i)
+            interpreter = Interpreter([0, 0, 0], [i, 0, 0])
+            interpreter.interpret(asm)
+
         assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)

@@ -265,6 +265,7 @@ class LaunchableWave(Launchable):
         if kwargs.get("canonicalize", False):
             canonicalize_module(mb.module_op)
 
+        self.module_op = mb.module_op
         return mb, graph, exe, kernel_sig, entrypoint_name
 
     def test_execute(self, args, kwargs):
@@ -282,6 +283,7 @@ class LaunchableWave(Launchable):
             # TODO: cache compiled code
             host_codegen.isolated_test_call(mb, exe, kernel_sig, entrypoint_name)
             asm = mb.module_op.get_asm()
+            # print(asm)
 
             kernel_inputs = []
             kernel_outputs = []

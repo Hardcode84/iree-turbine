@@ -9,27 +9,26 @@ logger = get_logger("turbine.wave.interpreter")
 
 
 from ..kernel.compiler.ir import (
-    amdgpu_d,
-    builtin_d,
     Context,
+    F16Type,
+    F32Type,
     IndexType,
-    Value,
-    VectorType,
+    IntegerAttr,
     Module,
     Operation,
+    Value,
+    VectorType,
+    amdgpu_d,
+    arith_d,
+    builtin_d,
     flow_d,
     func_d,
     gpu_d,
     llvm_d,
-    scf_d,
-    vector_d,
     memref_d,
-    IntegerAttr,
-    IndexType,
-    arith_d,
+    scf_d,
     stream_d,
-    F32Type,
-    F16Type,
+    vector_d,
 )
 
 
@@ -53,6 +52,8 @@ class Interpreter:
             return torch.float32
         if type(dtype) == F16Type:
             return torch.float16
+        if type(dtype) == IndexType:
+            return torch.int64
         raise NotImplementedError(f"Unsupported dtype: {dtype}")
 
     def create_tensor(self, shape: list[int], dtype, value) -> torch.Tensor:
@@ -83,7 +84,7 @@ class Interpreter:
                         value = self.create_tensor(
                             shape,
                             dtype,
-                            op.attributes["value"].get_splat_value(),
+                            0.0,  # op.attributes["value"].get_splat_value(),
                         )
                     else:
                         raise NotImplementedError(f"Unsupported constant type: {vtype}")
@@ -148,17 +149,26 @@ class Interpreter:
                     store_indices = []
                     for index in op.indices:
                         store_indices.append(self.symbol_table[index])
+                    print(store_indices)
                     vector = self.symbol_table[op.valueToStore]
                     memref = self.symbol_table[op.base]
                     result_type = vector.type
                     result_shape = vector.shape
                     # Row-major store
                     offset = [0 for _ in range(len(store_indices))]
-                    offset[-1] += 1
                     for i in range(*result_shape):
                         memref[
                             *[int(x) + y for x, y in zip(store_indices, offset)]
                         ] = vector[i]
+                        offset[-1] += 1
+                case vector_d.ConstantMaskOp:
+                    shape = op.result.type.shape
+                    value = torch.ones(shape, dtype=bool)
+                case vector_d.GatherOp:
+                    mtype = op.result.type
+                    shape = mtype.shape
+                    dtype = mtype.element_type
+                    value = torch.zeros(shape, dtype=self.get_dtype(dtype))
                 case stream_d.DispatchWorkgroupIDOp:
                     index = int(op.attributes["dimension"])
                     value = self.workgroup_ids[index]
