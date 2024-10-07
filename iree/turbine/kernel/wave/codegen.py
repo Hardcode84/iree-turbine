@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import torch.fx as fx
 import torch.utils._pytree as pytree
 from collections import namedtuple
+import numpy as np
 
 from ..compiler.ir import (
     Attribute,
@@ -102,15 +103,18 @@ class WaveEmitter:
         self.ip = InsertionPoint(self.root_sig.entry_block)
 
     def emit_program_invariants(self):
+        i32 = IntegerType.get_signless(32)
+        to32 = lambda a: arith_d.index_cast(i32, a)
+
         self.workgroup_ids = [
-            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 0)),
-            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 1)),
-            stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 2)),
+            to32(stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 0))),
+            to32(stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 1))),
+            to32(stream_d.dispatch_workgroup_id(IntegerAttr.get(IndexType.get(), 2))),
         ]
         self.thread_ids = [
-            gpu_d.thread_id(gpu_d.Dimension.x),
-            gpu_d.thread_id(gpu_d.Dimension.y),
-            gpu_d.thread_id(gpu_d.Dimension.z),
+            to32(gpu_d.thread_id(gpu_d.Dimension.x)),
+            to32(gpu_d.thread_id(gpu_d.Dimension.y)),
+            to32(gpu_d.thread_id(gpu_d.Dimension.z)),
         ]
         self.induction_vars: dict[IndexSymbol, Value] = {}
         self.dynamic_dims: dict[IndexSymbol, Value] = {}
@@ -214,8 +218,23 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
 
         return arg
 
+    def _check_index_int(a, b):
+        return (isinstance(a, IndexType) and isinstance(b, IntegerType)) or (
+            isinstance(a, VectorType)
+            and isinstance(b, VectorType)
+            and _check_index_int(a.element_type, b.element_type)
+        )
+
     def _check_vec_scalar(a, b):
-        return isinstance(a.type, VectorType) and a.type.element_type == b.type
+        return isinstance(a.type, VectorType) and isinstance(
+            b.type, (IndexType, IntegerType)
+        )
+
+    def _make_index_type(t):
+        if isinstance(t, VectorType):
+            return VectorType.get(t.shape, IndexType.get())
+
+        return IndexType.get()
 
     def _broadcast(a, b):
         a = _get_ir_value(a)
@@ -225,11 +244,19 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
             return a, b
 
         if _check_vec_scalar(a, b):
-            b = vector_d.splat(a.type, b)
-            return a, b
+            b = vector_d.splat(VectorType.get(a.type.shape, b.type), b)
+            return _broadcast(a, b)
 
         if _check_vec_scalar(b, a):
-            a = vector_d.splat(b.type, a)
+            a = vector_d.splat(VectorType.get(b.type.shape, a.type), a)
+            return _broadcast(a, b)
+
+        if _check_index_int(a.type, b.type):
+            b = arith_d.index_cast(_make_index_type(a.type), b)
+            return a, b
+
+        if _check_index_int(b.type, a.type):
+            a = arith_d.index_cast(_make_index_type(b.type), a)
             return a, b
 
         raise CodegenError(f"Cannot broadcast {a.type} and {b.type}")
@@ -332,13 +359,28 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
         if isinstance(val, _Rational):
             raise CodegenError(f"Rational is not supported yet in '{type(term)}'")
 
+    i32 = IntegerType.get_signless(32)
+    max_int = np.iinfo(np.int32).max
+    min_int = np.iinfo(np.int32).min
+
+    def _get_elem_type(val):
+        if isinstance(val, int):
+            use_index = val < min_int or val > max_int
+        elif isinstance(val, (tuple, list)):
+            use_index = any(v < min_int or v > max_int for v in val)
+        else:
+            raise CodegenError(f"Unsupported const val {val} : {type(val)}")
+
+        return IndexType.get() if use_index else i32
+
     def _get_const(val):
         if isinstance(val, int):
-            return arith_d.constant(IndexType.get(), val)
+            return arith_d.constant(_get_elem_type(val), val)
 
         if isinstance(val, (tuple, list)):
-            vec_type = VectorType.get([len(val)], IndexType.get())
-            vals = [IntegerAttr.get(IndexType.get(), v) for v in val]
+            elem_type = _get_elem_type(val)
+            vec_type = VectorType.get([len(val)], elem_type)
+            vals = [IntegerAttr.get(elem_type, v) for v in val]
             return arith_d.constant(vec_type, DenseElementsAttr.get(vals, vec_type))
 
         raise CodegenError(f"Unsupported const val {val} : {type(val)}")
@@ -411,7 +453,13 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
     if len(stack) != 1 or isinstance(stack[0], _Rational):
         raise CodegenError(f"Expected single result, got {len(stack)}")
 
-    return stack[0]
+    res = stack[0]
+    if res.type == i32 or (
+        isinstance(res.type, VectorType) and res.type.element_type == i32
+    ):
+        res = arith_d.index_cast(_make_index_type(res.type), res)
+
+    return res
 
 
 def get_constant_attr(value: Any, element_type: IrType) -> Attribute:
