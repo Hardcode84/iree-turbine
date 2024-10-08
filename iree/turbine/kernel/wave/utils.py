@@ -324,6 +324,7 @@ def compile_and_invoke(
         "--iree-vm-bytecode-module-strip-source-map=true",
         "--iree-opt-strip-assertions=true",
         "--iree-vm-target-truncate-unsupported-floats",
+        "--iree-codegen-llvmgpu-use-igemm",
     ]
 
     # TODO: More targets/backends support.
