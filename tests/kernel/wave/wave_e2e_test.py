@@ -888,9 +888,12 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     ):
         out = torch.zeros_like(out_ref)
         import torch.nn.functional as F
-        x = F.pad(input=x, pad=(0, 0, 0, 0, 1, 1, 1, 1), mode='constant', value=0)
-        we = F.pad(input=we, pad=(0, 0, 0, 0, 1, 1, 1, 1), mode='constant', value=0)
-        out = F.pad(input=out, pad=(0, 0, 0, 0, 1, 1, 1, 1), mode='constant', value=0)
+        def pad(v):
+            shape = v.shape
+            return F.pad(input=v, pad=(0, 0, 0, 0, 10, 0, 0, 0), mode='constant', value=0)[:shape[0],:shape[1],:shape[2],:shape[3]]
+        x = pad(x)
+        we = pad(we)
+        out = pad(out)
         conv(x, we, out)
         assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
 
