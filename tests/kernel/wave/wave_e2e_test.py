@@ -853,7 +853,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     if run_bench:
         config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3
-        config["dump_intermediates"] = "./inter_tk"
+        config["dump_intermediates"] = "./inter"
 
     if dump_perf is not None:
         perf_filename = request.node.name + ".json"
@@ -895,7 +895,6 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         assert_allclose(out, out_ref, rtol=1e-03, atol=1e-03)
 
         if run_bench:
-            config["dump_intermediates"] = "./inter_iree"
             if dump_perf is not None:
                 config["benchmark_results_file"] = os.path.join(
                     dump_perf, "iree_" + perf_filename
