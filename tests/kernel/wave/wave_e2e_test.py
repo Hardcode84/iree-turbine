@@ -891,8 +891,8 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         def pad(v):
             shape = v.shape
             p = 10
-            r = F.pad(input=v, pad=(0, 0, 0, 0, 0, 0, p, p), mode='constant', value=0)
-            return r[p:shape[0]+p,:shape[1],:shape[2],:shape[3]]
+            r = F.pad(input=v, pad=(p, p, p, p, p, p, p, p), mode='constant', value=0)
+            return r[p:shape[0]+p,p:shape[1]+p,p:shape[2]+p,p:shape[3]+p]
         x = pad(x)
         we = pad(we)
         out = pad(out)
