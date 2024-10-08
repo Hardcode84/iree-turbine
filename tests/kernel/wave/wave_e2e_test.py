@@ -734,6 +734,9 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     x = torch.randn(n, c, h, w, dtype=torch.float16)
     we = torch.randn(nf, cf, hf, wf, dtype=torch.float16)
 
+    import torch.nn.functional as F
+    x = F.pad(input=x, pad=(0, 2, 0, 2, 0, 0, 0, 0), mode='constant', value=0)
+
     convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
     convRef.weight = torch.nn.Parameter(we)
     out_ref = convRef(x).detach()
