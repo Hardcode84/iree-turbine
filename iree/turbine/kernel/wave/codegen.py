@@ -526,6 +526,8 @@ def _is_identity_mapping(
 def _build_mask(
     emitter: WaveEmitter, index: Dict[IndexExpr, IndexExpr], elements_per_thread: int
 ) -> Optional[OpResult]:
+    return None
+
     bounds = find_index_bounds(emitter.constraints, index)
     if bounds is None:
         return None
