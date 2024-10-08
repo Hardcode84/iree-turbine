@@ -709,6 +709,7 @@ _igemm_cases += [
     perf_test(2, 64, 64, 640, 1, 1, 960, 1),
     perf_test(2, 64, 64, 640, 3, 3, 320, 1),
     perf_test(2, 64, 64, 640, 3, 3, 640, 1),
+    perf_test(2, 66, 66, 640, 3, 3, 640, 1),
 ]
 
 _mem_spaces = [
@@ -733,9 +734,6 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     torch.manual_seed(1)
     x = torch.randn(n, c, h, w, dtype=torch.float16)
     we = torch.randn(nf, cf, hf, wf, dtype=torch.float16)
-
-    import torch.nn.functional as F
-    x = F.pad(input=x, pad=(0, 2, 0, 2, 0, 0, 0, 0), mode='constant', value=0)
 
     convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
     convRef.weight = torch.nn.Parameter(we)
