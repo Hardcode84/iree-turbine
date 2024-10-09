@@ -255,6 +255,8 @@ def gen_sympy_index(
 
         return None
 
+    overflow_flags = arith_d.IntegerOverflowFlags.nsw | arith_d.IntegerOverflowFlags.nuw
+
     def muli_fold(lhs, rhs):
         if get_const_val(lhs) == 1:
             return rhs
@@ -262,7 +264,24 @@ def gen_sympy_index(
         if get_const_val(rhs) == 1:
             return lhs
 
-        return arith_d.muli(lhs, rhs)
+        return arith_d.muli(
+            lhs,
+            rhs,
+            overflow_flags=overflow_flags,
+        )
+
+    def addi_fold(lhs, rhs):
+        if get_const_val(lhs) == 0:
+            return rhs
+
+        if get_const_val(rhs) == 0:
+            return lhs
+
+        return arith_d.addi(
+            lhs,
+            rhs,
+            overflow_flags=overflow_flags,
+        )
 
     # `x + (a/b)` transformed into `(x*b + a) / b`
     def _add(lhs, rhs):
@@ -270,20 +289,20 @@ def gen_sympy_index(
         is_rational_rhs = isinstance(rhs, _Rational)
         if is_rational_lhs and not is_rational_rhs:
             numerator = muli_fold(*_broadcast(lhs.denominator, rhs))
-            numerator = arith_d.addi(*_broadcast(numerator, lhs.numerator))
+            numerator = addi_fold(*_broadcast(numerator, lhs.numerator))
             return _Rational(numerator, lhs.denominator)
         elif not is_rational_lhs and is_rational_rhs:
             numerator = muli_fold(*_broadcast(lhs, rhs.denominator))
-            numerator = arith_d.addi(*_broadcast(numerator, rhs.numerator))
+            numerator = addi_fold(*_broadcast(numerator, rhs.numerator))
             return _Rational(numerator, rhs.denominator)
         elif is_rational_lhs and is_rational_rhs:
             lhs_numerator = muli_fold(*_broadcast(lhs.numerator, rhs.denominator))
             rhs_numerator = muli_fold(*_broadcast(rhs.numerator, lhs.denominator))
-            numerator = arith_d.addi(*_broadcast(lhs_numerator, rhs_numerator))
+            numerator = addi_fold(*_broadcast(lhs_numerator, rhs_numerator))
             denominator = muli_fold(*_broadcast(lhs.denominator, rhs.denominator))
             return _Rational(numerator, denominator)
         else:
-            return arith_d.addi(*_broadcast(lhs, rhs))
+            return addi_fold(*_broadcast(lhs, rhs))
 
     # `x * (a/b)` transformed into `(x * a) / b`
     def _mul(lhs, rhs):
