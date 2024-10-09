@@ -177,7 +177,7 @@ def get_type_or_element_type(operand_type: IrType):
         return operand_type
 
 
-def add_emitter_subs(emitter: WaveEmitter) -> dict[IndexSymbol, Any]:
+def get_induction_vars(emitter: WaveEmitter) -> tuple[list[IndexExpr], list[OpResult]]:
     induction_var_syms = []
     induction_vars = []
     if emitter.induction_vars:
@@ -188,6 +188,12 @@ def add_emitter_subs(emitter: WaveEmitter) -> dict[IndexSymbol, Any]:
                 ), f"Could not find induction var for {constraint.dim} dimension"
                 induction_var_syms.append(constraint.induction_var)
                 induction_vars.append(emitter.induction_vars[constraint.dim])
+
+    return induction_var_syms, induction_vars
+
+
+def get_emitter_subs(emitter: WaveEmitter) -> dict[IndexSymbol, Any]:
+    induction_var_syms, induction_vars = get_induction_vars(emitter)
 
     # TODO: factor this out
     all_symbols = emitter.thread_ids + emitter.workgroup_ids + induction_vars
@@ -205,7 +211,11 @@ def add_emitter_subs(emitter: WaveEmitter) -> dict[IndexSymbol, Any]:
 _Rational = namedtuple("_Rational", ["numerator", "denominator"])
 
 
-def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpResult:
+def gen_sympy_index(
+    dynamics: dict[IndexSymbol, Any],
+    expr: sympy.Expr,
+    induction_var_syms: list[IndexExpr] = [],
+) -> OpResult:
     stack: list[OpResult] = []
 
     def _get_ir_value(arg):
@@ -304,15 +314,27 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
 
         return value
 
-    def _group_rationals(stack, count):
+    def _group_rationals(stack, args):
         """Group rationals and non-rationals args into 2 contiguous sets.
 
         This allows to mul/add all non-rationals first, reducing total number of ops.
         """
+        terms = []
+        for arg in args:
+            terms.append((arg, stack.pop()))
+
+        if len(induction_var_syms) > 0:
+            # Group args based on induction vars usage to help LICM later.
+            def _key(arg):
+                return sum(
+                    1 for sym in induction_var_syms if sym in arg[0].free_symbols
+                )
+
+            terms.sort(key=_key, reverse=True)
+
         rationals = []
         non_rationals = []
-        for _ in range(count):
-            val = stack.pop()
+        for _, val in terms:
             if isinstance(val, _Rational):
                 rationals.append(val)
             else:
@@ -363,10 +385,10 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
             case sympy.Integer():
                 stack.append(_get_const(int(term)))
             case sympy.Mul():
-                args = _group_rationals(stack, len(term.args))
+                args = _group_rationals(stack, term.args)
                 stack.append(_apply(args, _mul))
             case sympy.Add():
-                args = _group_rationals(stack, len(term.args))
+                args = _group_rationals(stack, term.args)
                 stack.append(_apply(args, _add))
             case sympy.Mod():
                 rhs = stack.pop()
@@ -412,6 +434,12 @@ def gen_sympy_index(dynamics: dict[IndexSymbol, Any], expr: sympy.Expr) -> OpRes
         raise CodegenError(f"Expected single result, got {len(stack)}")
 
     return stack[0]
+
+
+def _gen_sympy_index_full(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
+    subs = get_emitter_subs(emitter)
+    induction_var_syms, _ = get_induction_vars(emitter)
+    return gen_sympy_index(subs, expr, induction_var_syms)
 
 
 def get_constant_attr(value: Any, element_type: IrType) -> Attribute:
@@ -492,10 +520,7 @@ def _get_start_indices(
 def _build_start_indices(
     emitter: WaveEmitter, src_indices: dict[IndexExpr, IndexSequence | IndexExpr]
 ) -> list[OpResult]:
-    return [
-        gen_sympy_index(add_emitter_subs(emitter), i)
-        for i in _get_start_indices(src_indices)
-    ]
+    return [_gen_sympy_index_full(emitter, i) for i in _get_start_indices(src_indices)]
 
 
 def _compute_offset(indices: list[IndexExpr], strides: list[IndexExpr]) -> IndexExpr:
@@ -539,7 +564,7 @@ def _build_mask(
     mask_expr = functools.reduce(
         lambda a, b: sympy.And(a, b), (new_index[dim] < dim for dim in bounds)
     )
-    mask = gen_sympy_index(add_emitter_subs(emitter), mask_expr)
+    mask = _gen_sympy_index_full(emitter, mask_expr)
 
     mask_vec_type = VectorType.get([elements_per_thread], IntegerType.get_signless(1))
     if mask.type != mask_vec_type:
@@ -632,9 +657,7 @@ def _construct_gather_scatter_indices(
             start_indices_orig[-1] + idxc.iota(elements_per_thread),
         )
         indices = [i.subs(subs) for i in index_mapping]
-        offsets_vec = gen_sympy_index(
-            add_emitter_subs(emitter), _compute_offset(indices, strides)
-        )
+        offsets_vec = _gen_sympy_index_full(emitter, _compute_offset(indices, strides))
     else:
         start_indices = _build_start_indices(emitter, result_index)
         offsets_vec = arith_d.ConstantOp(
