@@ -439,8 +439,6 @@ def gen_sympy_index(
 def _gen_sympy_index_full(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     subs = get_emitter_subs(emitter)
     induction_var_syms, _ = get_induction_vars(emitter)
-    induction_var_syms = []
-    induction_var_syms.append(sympy.Symbol("$IOTA8"))
     return gen_sympy_index(subs, expr, induction_var_syms)
 
 
@@ -582,6 +580,7 @@ def _construct_gather_scatter_indices(
     mapping: IndexMapping,
     elements_per_thread: int,
     is_read: bool,
+    thread_offset: int = 0,
 ) -> tuple[OpResult, OpResult, OpResult]:
     # Apply symbolc_shape order to indices, e.g. if original mapping is
     # {M: iter(0), N: iter(1)} and symbolc_shape is (N, M), result will
@@ -650,16 +649,19 @@ def _construct_gather_scatter_indices(
         offsets.append(IntegerAttr.get(IndexType.get(), offset))
 
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
-    if need_dynamic_offsets:
+    if need_dynamic_offsets or True:
         result_index = {key: 0 for key in symbolc_shape}
-        start_indices = _build_start_indices(emitter, result_index)
+        # start_indices = _build_start_indices(emitter, result_index)
         subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
+        off = idxc.iota(elements_per_thread) + thread_offset
         subs[-1] = (
             subs[-1][0],
-            start_indices_orig[-1] + idxc.iota(elements_per_thread),
+            start_indices_orig[-1] + off,
         )
         indices = [i.subs(subs) for i in index_mapping]
         offsets_vec = _gen_sympy_index_full(emitter, _compute_offset(indices, strides))
+        indices = {key: ind for key, ind in zip(symbolc_shape, indices)}
+        start_indices = _build_start_indices(emitter, indices)
     else:
         start_indices = _build_start_indices(emitter, result_index)
         offsets_vec = arith_d.ConstantOp(
@@ -715,22 +717,45 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
                 vector_type, kb_src, start_indices, mask, passthru
             )
     else:
-        start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
-            emitter=emitter,
-            symbolc_shape=input_shape,
-            index=index,
-            mapping=mapping,
-            elements_per_thread=cast_py_literal(emitter, elements_per_thread),
-            is_read=True,
-        )
-
         zero = get_constant_attr(0, element_type)
-        zero = arith_d.ConstantOp(vector_type.element_type, zero)
-        passthru = vector_d.splat(vector_type, zero)
+        zero = arith_d.ConstantOp(element_type, zero)
+        result = vector_d.splat(vector_type, zero)
+        vec_type1 = VectorType.get([1], element_type)
+        passthru = vector_d.splat(vec_type1, zero)
+        for i in range(elements_per_thread):
+            start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
+                emitter=emitter,
+                symbolc_shape=input_shape,
+                index=index,
+                mapping=mapping,
+                elements_per_thread=1,
+                is_read=True,
+                thread_offset=i,
+            )
 
-        result = vector_d.gather(
-            vector_type, kb_src, start_indices, offsets_vec, mask, passthru
-        )
+            res = vector_d.maskedload(vec_type1, kb_src, start_indices, mask, passthru)
+            res = vector_d.extractelement(
+                res, position=arith_d.ConstantOp(IndexType.get(), 0)
+            )
+            pos = arith_d.ConstantOp(IndexType.get(), i)
+            result = vector_d.insertelement(res, result, position=pos)
+
+        # start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
+        #     emitter=emitter,
+        #     symbolc_shape=input_shape,
+        #     index=index,
+        #     mapping=mapping,
+        #     elements_per_thread=cast_py_literal(emitter, elements_per_thread),
+        #     is_read=True,
+        # )
+
+        # zero = get_constant_attr(0, element_type)
+        # zero = arith_d.ConstantOp(vector_type.element_type, zero)
+        # passthru = vector_d.splat(vector_type, zero)
+
+        # result = vector_d.gather(
+        #     vector_type, kb_src, start_indices, offsets_vec, mask, passthru
+        # )
 
     emitter.bind_node_proxy(node, IRProxyValue(result))
 

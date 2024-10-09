@@ -248,6 +248,10 @@ class IndexingContext:
             return None
 
     def iota(self, n: int) -> IndexExpr:
+        assert n > 0, f"Invalid n: {n}"
+        if n == 1:
+            return sympy.sympify(0)
+
         sym = index_symbol(f"$IOTA{n}")
         if sym not in self.special_subs:
             self.special_subs[sym] = tuple(range(n))
