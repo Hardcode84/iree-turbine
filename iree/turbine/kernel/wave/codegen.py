@@ -626,14 +626,18 @@ def _construct_gather_scatter_indices(
     if need_dynamic_offsets:
         result_index = {key: 0 for key in symbolc_shape}
         start_indices = _build_start_indices(emitter, result_index)
-        subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
-        subs[-1] = (
-            subs[-1][0],
-            start_indices_orig[-1] + idxc.iota(elements_per_thread),
-        )
-        indices = [i.subs(subs) for i in index_mapping]
-        offsets_vec = gen_sympy_index(
-            add_emitter_subs(emitter), _compute_offset(indices, strides)
+        # subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
+        # subs[-1] = (
+        #     subs[-1][0],
+        #     start_indices_orig[-1] + idxc.iota(elements_per_thread),
+        # )
+        # indices = [i.subs(subs) for i in index_mapping]
+        # offsets_vec = gen_sympy_index(
+        #     add_emitter_subs(emitter), _compute_offset(indices, strides)
+        # )
+        offsets = [IntegerAttr.get(IndexType.get(), 0)] * elements_per_thread
+        offsets_vec = arith_d.ConstantOp(
+            offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
         )
     else:
         start_indices = _build_start_indices(emitter, result_index)
