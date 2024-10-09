@@ -709,6 +709,7 @@ _igemm_cases += [
     perf_test(2, 64, 64, 640, 1, 1, 960, 1),
     perf_test(2, 64, 64, 640, 3, 3, 320, 1),
     perf_test(2, 64, 64, 640, 3, 3, 640, 1),
+    perf_test(2, 67, 67, 640, 4, 4, 640, 1),
 ]
 
 _mem_spaces = [
@@ -853,6 +854,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     if run_bench:
         config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3
+        config["print_ir_after_all"] = True
 
     if dump_perf is not None:
         perf_filename = request.node.name + ".json"
