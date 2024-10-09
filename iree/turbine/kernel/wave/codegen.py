@@ -439,6 +439,8 @@ def gen_sympy_index(
 def _gen_sympy_index_full(emitter: WaveEmitter, expr: sympy.Expr) -> OpResult:
     subs = get_emitter_subs(emitter)
     induction_var_syms, _ = get_induction_vars(emitter)
+    induction_var_syms = []
+    induction_var_syms.append(sympy.Symbol("$IOTA8"))
     return gen_sympy_index(subs, expr, induction_var_syms)
 
 
