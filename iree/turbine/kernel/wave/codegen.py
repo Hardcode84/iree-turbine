@@ -734,11 +734,8 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
             )
 
             res = vector_d.maskedload(vec_type1, kb_src, start_indices, mask, passthru)
-            res = vector_d.extractelement(
-                res, position=arith_d.ConstantOp(IndexType.get(), 0)
-            )
-            pos = arith_d.ConstantOp(IndexType.get(), i)
-            result = vector_d.insertelement(res, result, position=pos)
+            res = vector_d.extract(res, [], [0])
+            result = vector_d.insert(res, result, [], [i])
 
         # start_indices, offsets_vec, mask = _construct_gather_scatter_indices(
         #     emitter=emitter,
