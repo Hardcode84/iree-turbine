@@ -623,7 +623,7 @@ def _construct_gather_scatter_indices(
         # Update most-minor dim, i.e. in case of identity mapping it will
         # be equivalent to just vector.load
         subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
-        subs[-1] = (subs[-1][0], start_indices_orig[-1] + i + thread_offset)
+        subs[-1] = (subs[-1][0], start_indices_orig[-1] + i)
         indices = [i.subs(subs) for i in index_mapping]
 
         # First, we build indices as if resulting gather/scatter `start_indices`
@@ -651,17 +651,17 @@ def _construct_gather_scatter_indices(
     offsets_vec_type = VectorType.get([elements_per_thread], IndexType.get())
     if need_dynamic_offsets or True:
         result_index = {key: 0 for key in symbolc_shape}
-        start_indices = _build_start_indices(emitter, result_index)
+        # start_indices = _build_start_indices(emitter, result_index)
         subs = [(sym, idx) for sym, idx in zip(iters.keys(), start_indices_orig)]
-        off = start_indices_orig[-1] + idxc.iota(elements_per_thread) + thread_offset
+        off = idxc.iota(elements_per_thread) + thread_offset
         subs[-1] = (
             subs[-1][0],
-            off,
+            start_indices_orig[-1] + off,
         )
         indices = [i.subs(subs) for i in index_mapping]
         offsets_vec = _gen_sympy_index_full(emitter, _compute_offset(indices, strides))
-        if not isinstance(offsets_vec, VectorType):
-            offsets_vec = vector_d.splat(offsets_vec_type, offsets_vec)
+        indices = {key: ind for key, ind in zip(symbolc_shape, indices)}
+        start_indices = _build_start_indices(emitter, indices)
     else:
         start_indices = _build_start_indices(emitter, result_index)
         offsets_vec = arith_d.ConstantOp(
@@ -733,9 +733,7 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
                 thread_offset=i,
             )
 
-            res = vector_d.gather(
-                vec_type1, kb_src, start_indices, offsets_vec, mask, passthru
-            )
+            res = vector_d.maskedload(vec_type1, kb_src, start_indices, mask, passthru)
             res = vector_d.extract(res, [], [0])
             result = vector_d.insert(res, result, [], [i])
 
