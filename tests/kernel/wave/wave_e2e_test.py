@@ -709,6 +709,7 @@ _igemm_cases += [
     perf_test(2, 64, 64, 640, 1, 1, 960, 1),
     perf_test(2, 64, 64, 640, 3, 3, 320, 1),
     perf_test(2, 64, 64, 640, 3, 3, 640, 1),
+    perf_test(2, 67, 67, 640, 4, 4, 640, 1),
 ]
 
 _mem_spaces = [
@@ -737,6 +738,11 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     convRef = torch.nn.Conv2d(c, nf, hf, stride=stride, padding=padding, bias=False)
     convRef.weight = torch.nn.Parameter(we)
     out_ref = convRef(x).detach()
+
+    # h_out = (h + 2 * padding - hf) // stride + 1
+    # w_out = (w + 2 * padding - wf) // stride + 1
+    # res_shape = (n, nf, h_out, w_out)
+    # out_ref = torch.zeros(res_shape, dtype=torch.float32)
 
     sym = tkl.sym
     N, C, H, W = sym.N, sym.C, sym.H, sym.W
