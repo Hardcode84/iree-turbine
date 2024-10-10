@@ -738,6 +738,11 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     convRef.weight = torch.nn.Parameter(we)
     out_ref = convRef(x).detach()
 
+    # h_out = (h + 2 * padding - hf) // stride + 1
+    # w_out = (w + 2 * padding - wf) // stride + 1
+    # res_shape = (n, nf, h_out, w_out)
+    # out_ref = torch.zeros(res_shape, dtype=torch.float32)
+
     sym = tkl.sym
     N, C, H, W = sym.N, sym.C, sym.H, sym.W
     NF, HF, WF = sym.NF, sym.HF, sym.WF
@@ -756,15 +761,15 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         num_iterators=2,
         inputs={
             N: i // SZ_OUT,
-            C: j // (HF * WF),
-            W: (i % SZ_OUT) % W_OUT * stride + (j % (HF * WF)) % WF,
-            H: (i % SZ_OUT) // W_OUT * stride + (j % (HF * WF)) // WF,
+            C: j % C,
+            H: (i % SZ_OUT) % W_OUT * stride + (j // C) % WF,
+            W: (i % SZ_OUT) // W_OUT * stride + (j // C) // WF,
         },
         outputs={M: i, K: j},
     )
     w_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={NF: i % NF, C: j // (HF * WF), WF: j % WF, HF: (j % (HF * WF)) // WF},
+        inputs={NF: i % NF, C: j % C, HF: (j // C) % WF, WF: (j // C) // WF},
         outputs={NF: i, K: j},
     )
     out_mapping = tkw.IndexMapping(
@@ -773,8 +778,8 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         outputs={
             N: i // SZ_OUT,
             NF: j,
-            W_OUT: (i % SZ_OUT) % W_OUT,
-            H_OUT: (i % SZ_OUT) // W_OUT,
+            H_OUT: (i % SZ_OUT) % W_OUT,
+            W_OUT: (i % SZ_OUT) // W_OUT,
         },
     )
 
@@ -853,6 +858,7 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     if run_bench:
         config["benchmark_batch_size"] = 10
         config["benchmark_repetitions"] = 3
+        config["print_ir_after_all"] = True
 
     if dump_perf is not None:
         perf_filename = request.node.name + ".json"
