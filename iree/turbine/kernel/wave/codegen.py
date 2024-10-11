@@ -577,9 +577,9 @@ def _construct_gather_scatter_indices(
 
     # As we only support identity input/output mapping for now, we can directly
     # substitute iterators with corresponding expanded index.
-    subs = [
+    subs = list(idxc.subs.items()) + [
         (sym, expr.start) for sym, expr in zip(iters.keys(), index.values())
-    ] + list(idxc.subs.items())
+    ]
 
     # Contruct input/output index, substituting iterators in input mapping with
     # expanded index.
@@ -589,6 +589,31 @@ def _construct_gather_scatter_indices(
     offsets = []
 
     start_indices = _get_start_indices(result_index)
+
+    prev_indices = start_indices
+    # print("prev_indices" ,prev_indices)
+    # subs[-1] = (subs[-1][0], (subs[-1][1] // elements_per_thread) * elements_per_thread)
+    for i in range(1, elements_per_thread, 1):
+        subs[-1] = (subs[-1][0], subs[-1][1] + 1)
+        # print("subs",subs)
+        next_result_index = {
+            key: m.subs(subs) for key, m in zip(symbolc_shape, index_mapping)
+        }
+        next_indices = _get_start_indices(next_result_index)
+        # print("next_indices" ,next_indices)
+        diff = [sympy.simplify(a - b) for a, b in zip(next_indices, prev_indices)]
+        # print("diff", diff)
+        prev_indices = next_indices
+
+    mask = _build_mask(emitter, index, elements_per_thread)
+    if mask is None:
+        mask_vec_type = VectorType.get(
+            [elements_per_thread], IntegerType.get_signless(1)
+        )
+        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
+
+    return start_indices, None, mask
+
     start_indices_orig = _get_start_indices(index)
 
     need_dynamic_offsets = False
@@ -640,13 +665,6 @@ def _construct_gather_scatter_indices(
         offsets_vec = arith_d.ConstantOp(
             offsets_vec_type, DenseElementsAttr.get(offsets, offsets_vec_type)
         )
-
-    mask = _build_mask(emitter, index, elements_per_thread)
-    if mask is None:
-        mask_vec_type = VectorType.get(
-            [elements_per_thread], IntegerType.get_signless(1)
-        )
-        mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
 
     return start_indices, offsets_vec, mask
 
@@ -703,9 +721,14 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
         zero = arith_d.ConstantOp(vector_type.element_type, zero)
         passthru = vector_d.splat(vector_type, zero)
 
-        result = vector_d.gather(
-            vector_type, kb_src, start_indices, offsets_vec, mask, passthru
-        )
+        if offsets_vec is not None:
+            result = vector_d.gather(
+                vector_type, kb_src, start_indices, offsets_vec, mask, passthru
+            )
+        else:
+            result = vector_d.maskedload(
+                vector_type, kb_src, start_indices, mask, passthru
+            )
 
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
