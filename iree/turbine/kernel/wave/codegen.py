@@ -595,7 +595,16 @@ def _construct_gather_scatter_indices(
 
     prev_indices = start_indices
     # print("prev_indices" ,prev_indices)
-    # subs[-1] = (subs[-1][0], (subs[-1][1] // elements_per_thread) * elements_per_thread)
+    subs1 = [
+        (THREAD_0, 0),
+        (THREAD_1, 0),
+        (THREAD_2, 0),
+        (WORKGROUP_0, 0),
+        (WORKGROUP_1, 0),
+        (WORKGROUP_2, 0),
+    ]
+    subs1 += [(sympy.Symbol("$ARGC*HF*WF"), 0)]
+    subs[-1] = (subs[-1][0], subs[-1][1])
     for i in range(1, elements_per_thread, 1):
         subs[-1] = (subs[-1][0], subs[-1][1] + 1)
         # print("subs",subs)
@@ -604,7 +613,10 @@ def _construct_gather_scatter_indices(
         }
         next_indices = _get_start_indices(next_result_index)
         # print("next_indices" ,next_indices)
-        diff = [sympy.simplify(a - b) for a, b in zip(next_indices, prev_indices)]
+        diff = [
+            sympy.simplify(a.subs(subs1) - b.subs(subs1))
+            for a, b in zip(next_indices, prev_indices)
+        ]
         # print("diff", diff)
         prev_indices = next_indices
 
@@ -618,9 +630,9 @@ def _construct_gather_scatter_indices(
     global _skip
     if _skip or True:
         _skip = False
-        print("index", index)
-        print("mapping", mapping)
-        print("result_index",result_index)
+        # print("index", index)
+        # print("mapping", mapping)
+        # print("result_index",result_index)
         start_indices = _build_start_indices(emitter, result_index)
         return start_indices, None, mask
 
@@ -677,6 +689,9 @@ def _construct_gather_scatter_indices(
         )
 
     return start_indices, offsets_vec, mask
+
+
+_global_loads = []
 
 
 @handle_op(read)
@@ -740,6 +755,8 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
                 vector_type, kb_src, start_indices, mask, passthru
             )
 
+        _global_loads.append(node)
+
     emitter.bind_node_proxy(node, IRProxyValue(result))
 
 
@@ -749,6 +766,9 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         register, memory, elements_per_thread, mapping = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
+
+    if len(_global_loads) > 1 and register in _global_loads:
+        print("=-=-=-=-=-=-=-")
 
     # memory has no IR node yet.
     kb_dest, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)

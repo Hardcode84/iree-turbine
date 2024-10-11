@@ -754,6 +754,11 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     K = HF * WF * C
     M = SZ_OUT * N
 
+    # Workgroup tile sizes
+    BLOCK_M = tkl.sym.BLOCK_M
+    BLOCK_N = tkl.sym.BLOCK_N
+    BLOCK_K = tkl.sym.BLOCK_K
+
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
 
@@ -769,7 +774,12 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
     )
     w_mapping = tkw.IndexMapping(
         num_iterators=2,
-        inputs={NF: i % NF, C: j % C, HF: (j // C) % WF, WF: (j // C) // WF},
+        inputs={
+            NF: i * BLOCK_N,
+            C: j % C,
+            HF: (j // C) % WF,
+            WF: (j // C) // WF,
+        },
         outputs={NF: i, K: j},
     )
     out_mapping = tkw.IndexMapping(
@@ -783,10 +793,6 @@ def test_igemm_conv(n, h, w, c, hf, wf, nf, stride, mem_space, layout, request):
         },
     )
 
-    # Workgroup tile sizes
-    BLOCK_M = tkl.sym.BLOCK_M
-    BLOCK_N = tkl.sym.BLOCK_N
-    BLOCK_K = tkl.sym.BLOCK_K
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
     # Other hyperparameters
