@@ -616,8 +616,11 @@ def _construct_gather_scatter_indices(
         mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
 
     global _skip
-    if _skip:
+    if _skip or True:
         _skip = False
+        print("index", index)
+        print("mapping", mapping)
+        print("result_index",result_index)
         start_indices = _build_start_indices(emitter, result_index)
         return start_indices, None, mask
 
