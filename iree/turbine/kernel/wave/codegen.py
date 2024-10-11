@@ -612,6 +612,7 @@ def _construct_gather_scatter_indices(
         )
         mask = vector_d.constant_mask(mask_vec_type, [elements_per_thread])
 
+    start_indices = _build_start_indices(emitter, result_index)
     return start_indices, None, mask
 
     start_indices_orig = _get_start_indices(index)
