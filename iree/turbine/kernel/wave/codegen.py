@@ -747,6 +747,8 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
+    assert len(dyn_vals) == 0, "Dynamic vals are not implemented yet"
+
     vector_shape = cast_py_literal(emitter, (elements_per_thread,))
     # memory has no IR node yet.
     kb_src, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
@@ -805,6 +807,8 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
         register, memory, elements_per_thread, mapping, dyn_vals = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
+
+    assert len(dyn_vals) == 0, "Dynamic vals are not implemented yet"
 
     # memory has no IR node yet.
     kb_dest, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
