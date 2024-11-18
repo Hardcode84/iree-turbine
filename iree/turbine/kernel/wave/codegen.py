@@ -747,13 +747,13 @@ def handle_read(emitter: WaveEmitter, node: fx.Node):
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
 
-    assert len(dyn_vals) == 0, "Dynamic vals are not implemented yet"
+    # assert len(dyn_vals) == 0, "Dynamic vals are not implemented yet"
 
     vector_shape = cast_py_literal(emitter, (elements_per_thread,))
     # memory has no IR node yet.
     kb_src, kb_ir_type, kb_py_type = cast_kernel_buffer(emitter, memory)
 
-    if not hasattr(node, "index"):
+    if not all(map(lambda n: hasattr(n, "index"), (node,) + dyn_vals)):
         raise ValidationError("codegen expected read to have index attr.")
 
     index = node.index
