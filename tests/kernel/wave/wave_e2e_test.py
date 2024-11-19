@@ -16,6 +16,7 @@ from iree.turbine.kernel.wave.utils import (
     device_randint,
     device_randperm,
     device_zeros,
+    ceildiv,
 )
 import torch
 from torch.testing import assert_close
@@ -585,7 +586,9 @@ def test_offset_read1(shape, request):
 
     a = torch.randn(shape, dtype=torch.float16)
     count = int(ELEMS_PER_THREAD)
-    off = torch.randint(shape[0], (shape[0], shape[1] // count), dtype=torch.int32)
+    off = torch.randint(
+        shape[0], (shape[0], ceildiv(shape[1], count)), dtype=torch.int32
+    )
     out = torch.zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
@@ -599,9 +602,8 @@ def test_offset_read1(shape, request):
         run_config=config,
     ):
         test(a, off, out)
-        out_ref = torch.take_along_dim(
-            a, off.repeat_interleave(count, dim=1).to(torch.long), dim=0
-        )
+        off_expanded = off.repeat_interleave(count, dim=1)[:, : shape[1]].to(torch.long)
+        out_ref = torch.take_along_dim(a, off_expanded, dim=0)
         assert_allclose(out, out_ref)
 
 
