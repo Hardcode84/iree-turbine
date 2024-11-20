@@ -407,7 +407,7 @@ def test_offset_read_one(shape, request):
         num_iterators=2,
         inputs={M: k, N: j},
         outputs={M: i, N: j},
-        dynamic_val_mappings={M: i, N: j // ELEMS_PER_THREAD},
+        dynamic_val_mappings={M: i, N: sympy.ceiling(j / ELEMS_PER_THREAD)},
     )
 
     @tkw.wave(constraints)
