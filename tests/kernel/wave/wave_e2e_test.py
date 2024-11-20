@@ -427,12 +427,12 @@ def test_offset_read_one(shape, request):
 
     config = get_default_run_config()
 
-    a = torch.randn(shape, dtype=torch.float16)
+    a = device_randn(shape, dtype=torch.float16)
     count = int(ELEMS_PER_THREAD)
-    off = torch.randint(
+    off = device_randint(
         shape[0], (shape[0], ceildiv(shape[1], count)), dtype=torch.int32
     )
-    out = torch.zeros(shape, dtype=torch.float16)
+    out = device_zeros(shape, dtype=torch.float16)
     with tk.gen.TestLaunchContext(
         {
             M: shape[0],
