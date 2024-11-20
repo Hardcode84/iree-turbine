@@ -447,7 +447,7 @@ def test_offset_read_one(shape, request):
         test(a, off, out)
         off_expanded = off.repeat_interleave(count, dim=1)[:, : shape[1]].to(torch.long)
         out_ref = torch.take_along_dim(a, off_expanded, dim=0)
-        assert_allclose(out, out_ref)
+        assert_close(out, out_ref)
 
 
 @require_e2e
