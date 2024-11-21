@@ -1354,6 +1354,10 @@ class ReduceOp(CustomOp, ABC):
     def reduction_dim(self) -> IndexSymbol:
         return self.dim
 
+    @property
+    def elements_per_thread(self) -> int:
+        return 1
+
 
 # TODO: Add support for more shuffle types.
 @define_op("shuffle")
