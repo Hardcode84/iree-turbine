@@ -36,8 +36,7 @@ def process_seq(seq):
 
 
 def get_dim_indices(indices: list[IndexSequence]):
-    dims = frozenset([DimIndex(dim, process_seq(seq)) for dim, seq in indices.items()])
-    return dims
+    return frozenset([DimIndex(dim, process_seq(seq)) for dim, seq in indices.items()])
 
 
 def get_custom_dim_indices(custom: CustomOp):
@@ -60,9 +59,6 @@ def set_custom_index(custom: CustomOp, target_dim_sizes: list[DimIndex]):
 # Anchor Indicies and Conflict resolution helpers
 #################################################################
 
-# TODO: Permute ops can have different indices on input and output.
-# Add it to the anchorOpTypes to stop index propagation during forward/backward
-# lookups.
 anchorOpTypes = (Read, Write, MMA, ReduceOp, Reshape, Permute)
 noHandleTypes = (Placeholder, Output, ExtractSlice, Allocate)
 legalSubtypes = (IterArg,)
@@ -261,6 +257,23 @@ def determine_thread_shapes(trace: CapturedTrace):
             bwd_size = get_dim_indices(custom.args.index)
             bwd_slice = capture_backward_slice(custom.args, propagatable_op)
             update_dims(bwd_size, bwd_slice)
+        elif isinstance(custom, Permute):
+            # Permute ops can have different indices on input and output.
+            # Add it to the anchorOpTypes to stop index propagation during forward/backward
+            # lookups.
+            fwd_size = frozenset(
+                DimIndex(
+                    dim,
+                    process_seq(
+                        IndexSequence(
+                            custom.index[dim].start, custom.index[dim].size, 1
+                        )
+                    ),
+                )
+                for dim in custom.target_shape
+            )
+            fwd_slice = capture_forward_slice(custom.fx_node, propagatable_op)
+            update_dims(fwd_size, fwd_slice)
 
     # Go through each index-size buckets, and apply the index-size to ops in the bucket.
     cummulative_set = set()
