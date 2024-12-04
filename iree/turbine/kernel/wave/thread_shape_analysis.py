@@ -294,7 +294,9 @@ def determine_thread_shapes(trace: CapturedTrace):
                     for dim, ops in thread_size_to_ops.items()
                     if not conflicted_ops.isdisjoint(ops)
                 )
-                raise NotImplementedError(f"Failed to handle conflicting thread shape: {conflicted_ops}, {offenders}")
+                raise NotImplementedError(
+                    f"Failed to handle conflicting thread shape: {conflicted_ops}, {offenders}"
+                )
             target_ops = target_ops.difference(conflicted_ops)
         cummulative_set = cummulative_set.union(target_ops)
         # Set target ops's indexSize to be the determined from analysis.
