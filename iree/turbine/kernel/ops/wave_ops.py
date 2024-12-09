@@ -70,6 +70,7 @@ def read(
     elements_per_thread: Optional[IndexExpr | int] = None,
     mapping: Optional[IndexMapping] = None,
     mapping_dynamic_vals: "Register" | tuple["Register", ...] = (),
+    drop_dims: Optional[IndexExpr] = (),
 ) -> "Register":
     ...
 
@@ -469,7 +470,7 @@ class CustomOp(ABC):
         for i, arg in enumerate(self.fx_node.args):
             if isinstance(arg, fx.Node):
                 custom_args[i] = get_custom(arg)
-            if isinstance(arg, list) and all(isinstance(x, fx.Node) for x in arg):
+            if isinstance(arg, Sequence) and all(isinstance(x, fx.Node) for x in arg):
                 custom_args[i] = [get_custom(x) for x in arg]
         return custom_args
 
@@ -993,6 +994,22 @@ class Read(CustomOp):
     mapping: Optional[IndexMapping] = None
     mapping_dynamic_vals: tuple[fx.Node, ...] = ()
     _write_dependency: Optional[list[fx.Node]] = None
+
+    """
+    Note on drop_dims.
+    Consider the following loop:
+
+    for b in range(B):
+        for k1 in range(K1):
+            for k2 in range(K2):
+                out[b, k1, k2] = in[b, 0, k1, k2]
+
+    This is a slice where the output is a 3D tensor and the input is a 4D tensor.
+    The index mapping does not allow rank-reducing operations, since every symbol in the output must be
+    bound to an index variable. So we introduce a drop_dims field to specify which dimensions are dropped
+    after the mapping.
+
+    """
 
     @property
     def indexing_dims(self) -> list[IndexSymbol]:
