@@ -110,10 +110,47 @@ def get_decode_attention_kernels(
     i = tkw.IndexMapping.iterator(0)
     j = tkw.IndexMapping.iterator(1)
     k = tkw.IndexMapping.iterator(2)
+    l = tkw.IndexMapping.iterator(3)
     mapping = tkw.IndexMapping(
         num_iterators=3,
         inputs={B: i, N: j, M: k},
         outputs={B: i, N: j, M: k},
+    )
+
+    d0 = tkw.IndexMapping.dynamic_val(0)
+    k_mapping = tkw.IndexMapping(
+        num_iterators=3,
+        inputs={B: d0, K2: j, K1: k},
+        outputs={B: i, K2: j, K1: k},
+        dynamic_val_mappings={B: i, K2: j},
+    )
+
+    v_mapping = tkw.IndexMapping(
+        num_iterators=3,
+        inputs={B: d0, N: j, K2: k},
+        outputs={B: i, N: j, K2: k},
+        dynamic_val_mappings={B: i, K2: k},
+    )
+
+    block_table_mapping = tkw.IndexMapping(
+        num_iterators=2,
+        inputs={B: d0, K2: j},
+        outputs={B: i, K2: j},
+        dynamic_val_mappings={B: i},
+    )
+
+    output_max_mapping = tkw.IndexMapping(
+        num_iterators=3,
+        inputs={U: i, B: j, M: k},
+        outputs={U: i, B: d0, M: k},
+        dynamic_val_mappings={B: i},
+    )
+
+    output_mapping = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={U: i, B: j, N: k, M: l},
+        outputs={U: i, B: d0, N: k, M: l},
+        dynamic_val_mappings={B: i},
     )
 
     @tkw.wave(get_constraints(Phase.PHASE_0))
@@ -121,6 +158,8 @@ def get_decode_attention_kernels(
         q: tkl.Memory[B, M, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
         k: tkl.Memory[B, K2, K1, ADDRESS_SPACE, tkl.f16],
         v: tkl.Memory[B, N, K2, ADDRESS_SPACE, tkl.f16],
+        request_indices: tkl.Memory[B, GLOBAL_ADDRESS_SPACE, tkl.i32],
+        block_table: tkl.Memory[B, K2, GLOBAL_ADDRESS_SPACE, tkl.i32],
         output: tkl.Memory[U, B, N, M, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output_max: tkl.Memory[U, B, M, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
@@ -129,7 +168,19 @@ def get_decode_attention_kernels(
         init_sum = tkl.Register[B, M, tkl.f32](0.0)
         new_acc = tkl.Register[B, N, M, tkl.f32](0.0)
         q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD)
-        k_reg = tkw.read(k, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+        req_index = tkw.read(request_indices, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+        block_indices = tkw.read(
+            block_table,
+            elements_per_thread=LOAD_ELEMS_PER_THREAD,
+            mapping=block_table_mapping,
+            mapping_dynamic_vals=(req_index,),
+        )
+        k_reg = tkw.read(
+            k,
+            elements_per_thread=LOAD_ELEMS_PER_THREAD,
+            mapping=k_mapping,
+            mapping_dynamic_vals=(block_indices,),
+        )
         acc = tkw.mma(k_reg, q_reg, c_reg)
         x_j = tkw.permute(acc, target_shape=[B, M, K2])
         m_j = tkw.max(x_j, init_max, dim=K2)
@@ -138,11 +189,16 @@ def get_decode_attention_kernels(
         e_init = init_sum * e_delta_max
         d_j = tkw.sum(e_delta, e_init, dim=K2)
         imm_f16 = tkw.cast(e_delta, tkl.f16)
-        v_reg = tkw.read(v, elements_per_thread=LOAD_ELEMS_PER_THREAD)
+        v_reg = tkw.read(
+            v,
+            elements_per_thread=LOAD_ELEMS_PER_THREAD,
+            mapping=v_mapping,
+            mapping_dynamic_vals=(block_indices,),
+        )
         acc = tkw.mma(v_reg, imm_f16, new_acc)
         res = acc / d_j
         dm_j = m_j + tkw.log2(d_j)
-        tkw.write(dm_j, output_max, elements_per_thread=1)
+        tkw.write(dm_j, output_max, elements_per_thread=1, mapping=output_max_mapping)
         tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
