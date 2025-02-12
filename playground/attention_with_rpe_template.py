@@ -4,6 +4,7 @@
 # See https://llvm.org/LICENSE.txt for license information.
 # SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+import sympy
 from dataclasses import dataclass
 from typing import Optional
 
@@ -81,9 +82,9 @@ def get_vanilla_attention_kernel(
     )
 
     offset_mapping = tkw.IndexMapping(
-        num_iterators=1,
-        inputs={K2: i + OFFSET},
-        outputs={K2: i},
+        num_iterators=3,
+        inputs={K2: k + sympy.Piecewise((j - k, (j - k) >= 0), (0, True))},
+        outputs={B: i, M: j, K2: k},
     )
 
     # d = tkw.IndexMapping.dynamic_val(0)
@@ -138,59 +139,59 @@ def get_vanilla_attention_kernel(
             # When fusing into the FA variant, adding locally before the max and
             # the partial softmax should be equivalent.
             if use_t5_rpe:
-                ZERO = tkl.Register[B, M, K2, tkl.i64](0)
-                MAX = tkl.Register[B, M, K2, tkl.i64](max_context_length)
-                # 1. Indices i and j broadcasted along K2 with a twist:
-                # here we use *static* information that is *implicitly* encoded
-                # in the *transformation*: under the distribution constraints
-                # specified we know that the shape [M] will eventually resolve
-                # to [1] and can thus be "cast + broadcast" to [K2].
-                i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-                i = tkw.broadcast(i, target_shape=[B, M, K2])
-                j = tkw.self_index(
-                    K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK
-                )
-
-                # 2. Clip i - j to the proper bucket in [0, max_context_length]
-                # to represent the following:
-                #   - if 0 < i - j < max_context_length
-                #       then x_j += rpe_reg
-                #   - otherwise (i.e. i - j == {0, max_context_length})
-                #       then x_j += 0
-                # TODO: we may need scaling adjustements depending on how we want
-                # to do bucketing; atm it is bucketing of size 1.
-
-                # min/max variant
-                idx = tkw.maximum(i - j, ZERO)
-                idx = tkw.minimum(idx, MAX)
-
-                # select variant.
-                # idx = tkw.select(tkw.and_op(i - j >= ZERO, i - j <= MAX), i - j, ZERO)
-
-                idx = tkw.broadcast(idx, target_shape=[B,M,K2])
-
-                ### alternative
-                # rpe_reg = tkw.read(
-                #     rpe,
-                #     mapping=dynamic_mapping,
-                #     mapping_dynamic_vals=(idx,),
-                #     elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+                # ZERO = tkl.Register[B, M, K2, tkl.i64](0)
+                # MAX = tkl.Register[B, M, K2, tkl.i64](max_context_length)
+                # # 1. Indices i and j broadcasted along K2 with a twist:
+                # # here we use *static* information that is *implicitly* encoded
+                # # in the *transformation*: under the distribution constraints
+                # # specified we know that the shape [M] will eventually resolve
+                # # to [1] and can thus be "cast + broadcast" to [K2].
+                # i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+                # i = tkw.broadcast(i, target_shape=[B, M, K2])
+                # j = tkw.self_index(
+                #     K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK
                 # )
-                ###
 
-                # 3. Read indirect into the 1-D rpe array via offset_mapping.
-                tkw.set_symbol(OFFSET, idx)  # offset will have shape [M, K2]
+                # # 2. Clip i - j to the proper bucket in [0, max_context_length]
+                # # to represent the following:
+                # #   - if 0 < i - j < max_context_length
+                # #       then x_j += rpe_reg
+                # #   - otherwise (i.e. i - j == {0, max_context_length})
+                # #       then x_j += 0
+                # # TODO: we may need scaling adjustements depending on how we want
+                # # to do bucketing; atm it is bucketing of size 1.
+
+                # # min/max variant
+                # idx = tkw.maximum(i - j, ZERO)
+                # idx = tkw.minimum(idx, MAX)
+
+                # # select variant.
+                # # idx = tkw.select(tkw.and_op(i - j >= ZERO, i - j <= MAX), i - j, ZERO)
+
+                # idx = tkw.broadcast(idx, target_shape=[B,M,K2])
+
+                # ### alternative
+                # # rpe_reg = tkw.read(
+                # #     rpe,
+                # #     mapping=dynamic_mapping,
+                # #     mapping_dynamic_vals=(idx,),
+                # #     elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
+                # # )
+                # ###
+
+                # # 3. Read indirect into the 1-D rpe array via offset_mapping.
+                # tkw.set_symbol(OFFSET, idx)  # offset will have shape [M, K2]
                 rpe_reg = tkw.read(
                     rpe,
                     mapping=offset_mapping,
                     elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 )
-                rpe_reg = tkw.broadcast(rpe_reg, target_shape=[B,M,K2])
+                # rpe_reg = tkw.broadcast(rpe_reg, target_shape=[B,M,K2])
                 tkw.write(rpe_reg, debug_out, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
                 # tkw.write(tkw.cast(idx, tkl.f32), debug_out, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
 
                 # 4. Tadaaaa.
-                x_j = x_j + rpe_reg + tkw.cast(ZERO * idx, tkl.f32)
+                x_j = x_j + rpe_reg
 
             m_j = tkw.max(x_j, partial_max, dim=K2)
             e_delta_max = tkw.exp2(partial_max - m_j)
