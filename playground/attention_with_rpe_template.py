@@ -83,7 +83,13 @@ def get_vanilla_attention_kernel(
 
     offset_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={K2: k + sympy.Piecewise((max_context_length, (j - k) >= max_context_length), (sympy.Piecewise((j - k, (j - k) >= 0), (0, True)), True))},
+        inputs={
+            K2: k
+            + sympy.Piecewise(
+                (max_context_length, (j - k) >= max_context_length),
+                (sympy.Piecewise((j - k, (j - k) >= 0), (0, True)), True),
+            )
+        },
         outputs={B: i, M: j, K2: k},
     )
 
@@ -187,7 +193,9 @@ def get_vanilla_attention_kernel(
                     elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 )
                 # rpe_reg = tkw.broadcast(rpe_reg, target_shape=[B,M,K2])
-                tkw.write(rpe_reg, debug_out, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+                tkw.write(
+                    rpe_reg, debug_out, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK
+                )
                 # tkw.write(tkw.cast(idx, tkl.f32), debug_out, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
 
                 # 4. Tadaaaa.
