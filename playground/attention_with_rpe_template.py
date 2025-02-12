@@ -83,7 +83,7 @@ def get_vanilla_attention_kernel(
 
     offset_mapping = tkw.IndexMapping(
         num_iterators=3,
-        inputs={K2: k + sympy.Piecewise((j - k, (j - k) >= 0), (0, True))},
+        inputs={K2: k + sympy.Piecewise((max_context_length, (j - k) >= max_context_length), (sympy.Piecewise((j - k, (j - k) >= 0), (0, True)), True))},
         outputs={B: i, M: j, K2: k},
     )
 
