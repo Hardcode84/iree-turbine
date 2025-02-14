@@ -76,15 +76,15 @@ def get_t5_rpe_attention_kernel(
         num_iterators=3, inputs={B: i, N: j, M: k}, outputs={B: i, M: k, N: j}
     )
 
-    d0, d1 = [tkw.IndexMapping.dynamic_val(i) for i in range(2)]
+    # d0, d1 = [tkw.IndexMapping.dynamic_val(i) for i in range(2)]
     clip = sympy.Piecewise(
-        (d0 - d1, (d0 - d1 <= max_context_length) & (d0 - d1 > 0)), (0, True)
+        (i - j, (i - j <= max_context_length) & (i - j > 0)), (0, True)
     )
     offset_mapping = tkw.IndexMapping(
         num_iterators=2,
         inputs={M: i, K2: clip},
         outputs={M: i, K2: j},
-        dynamic_val_mappings=({M: i}, {K2: j}),
+        # dynamic_val_mappings=({M: i}, {K2: j}),
     )
 
     rpe_layout = tkl.MemoryLayout(shape=[max_context_length])
@@ -121,15 +121,15 @@ def get_t5_rpe_attention_kernel(
             # Fused T5 RPE adds attention bias pre-softmax normalization.
             # When fusing into the FA variant, adding locally before the max and
             # the partial softmax should be equivalent.
-            i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
-            i = tkw.broadcast(i, target_shape=[B, M, K2])
-            j = tkw.self_index(
-                K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK
-            )
+            # i = tkw.self_index(M, tkl.i64, elements_per_thread=1)
+            # i = tkw.broadcast(i, target_shape=[B, M, K2])
+            # j = tkw.self_index(
+            #     K2, tkl.i64, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK
+            # )
             rpe_reg = tkw.read(
                 rpe,
                 mapping=offset_mapping,
-                mapping_dynamic_vals=(i, j),
+                # mapping_dynamic_vals=(i, j),
                 elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
             )
             x_j = x_j + rpe_reg
