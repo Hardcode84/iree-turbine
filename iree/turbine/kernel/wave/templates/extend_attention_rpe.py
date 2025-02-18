@@ -160,10 +160,10 @@ def get_extend_attention_rpe_kernel(
         (max_rpe_context_length, True),
     )
     rpe_mapping = tkw.IndexMapping(
-        num_iterators=3,
-        inputs={H: i, N_Q: j, N_KV: clip},
-        outputs={H: i, N_Q: j, N_KV: k},
-        dynamic_val_mappings=({H: i, N_Q: j, N_KV: k}, {N_KV: k}),
+        num_iterators=2,
+        inputs={N_Q: i, N_KV: clip},
+        outputs={N_Q: i, N_KV: j},
+        dynamic_val_mappings=({N_Q: i}, {N_KV: j}),
     )
 
     # Set the dynamic shapes for the kernel. Here we set it to N_Q
