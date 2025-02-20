@@ -36,15 +36,16 @@ from iree.turbine.kernel.wave.templates.attention_common import (
 import os
 from enum import Enum
 from torch.testing import assert_allclose
+
 from ..common.utils import (
     require_e2e,
     require_cdna3,
     enable_scheduling_barriers,
     dump_generated_mlir,
 )
+from ..common.shapes import get_test_shapes, construct_test_name
 from torch.nn.attention.flex_attention import flex_attention
 from torch.nn.attention.flex_attention import create_block_mask
-from ..common.shapes import get_test_shapes, construct_test_name
 
 # Reference paged attention implementation from vLLM and sglang.
 
@@ -87,6 +88,7 @@ def context_attention_fwd(
     for i in range(len(b_seq_len)):
         start, end = cu_seq_lens[i], cu_seq_lens[i + 1]
         qkv_len = end - start
+        print(f"qkv_len {qkv_len}")
         Q = q[start:end].permute(1, 0, 2)
         K = k[start:end].permute(1, 0, 2)
         K = K.expand(Q.shape[0], *K.shape[1:])
@@ -104,7 +106,7 @@ def context_attention_fwd(
                 max_rpe_context_length=max_rpe_context_length,
                 sequence_length=K.shape[1],
             )
-            print(f"\n\nrpe_cond\n{rpe_cond}")
+            print(f"\n\nrpe_cond\n{rpe_cond[:8, :8]}")
             print(f"rpe_cond_shape: {rpe_cond.shape}")
             rpe_cond = rpe_cond.unsqueeze(0)
             rpe_cond = rpe_cond.expand(Q.shape[0], *rpe_cond.shape[1:])
@@ -243,7 +245,7 @@ def create_inputs(
     max_len_extend = torch.max(b_seq_len_extend, 0)[0].item()
     logit_cap = 30.0
 
-    max_rpe_context_length = 1
+    max_rpe_context_length = 10
     rpe_bias = device_zeros(max_rpe_context_length + 1, dtype=torch.float32)
     rpe_bias.copy_(
         5 * torch.rand(max_rpe_context_length + 1, dtype=torch.float32, device="cuda")
@@ -368,7 +370,7 @@ def testExtendAttention(
         run_bench=run_bench,
         run_config=config,
         schedule=enable_scheduling,
-        use_scheduling_barriers=enable_scheduling_barriers,
+        # use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
@@ -506,7 +508,7 @@ def testExtendRpeAttention(
         # compile_config={"print_ir_after": "all"},
         run_config=config,
         schedule=enable_scheduling,
-        use_scheduling_barriers=enable_scheduling_barriers,
+        # use_scheduling_barriers=enable_scheduling_barriers,
         dynamic_symbols=dynamic_symbols,
         dynamic_symbols_map=dynamic_symbols_map,
     ):
@@ -527,7 +529,7 @@ def testExtendRpeAttention(
         )
         print(mb_qk.module_op)
 
-    print(f"\n\nrpe_debug\n{rpe_debug[0]}")
+    print(f"\n\nrpe_debug\n{rpe_debug[0][0:8, 0:8]}")
     print(f"rpe_debug_shape: {rpe_debug[0].shape}")
 
     if dump_generated_mlir:
@@ -557,3 +559,21 @@ def testExtendRpeAttention(
     torch.testing.assert_close(
         output, ref_output, rtol=2e-3, atol=2e-3, check_dtype=False
     )
+
+
+# shape = AttentionShape(
+#     num_seqs=2,
+#     context_len=1024,
+#     num_query_heads=16,
+#     num_kv_heads=1,
+#     head_size=128,
+#     head_size_kv=128,
+#     block_size=64,
+# )
+# testExtendRpeAttention(
+#     shape,
+#     torch.float16,
+#     enable_scheduling=False,
+#     is_causal=False,
+#     mfma_variant=(MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+# )
