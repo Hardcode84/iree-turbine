@@ -92,7 +92,7 @@ def context_attention_fwd(
         V = V.expand(Q.shape[0], *V.shape[1:])
         dk_sqrt = math.sqrt(1.0 / Q.shape[-1])
         a = torch.bmm(Q * dk_sqrt, K.transpose(-1, -2))
-        if ScoreMod == ScoreMod.SoftCap:
+        if score_mod == ScoreMod.SoftCap:
             a = a / logit_cap
             a = torch.tanh(a)
             a = a * logit_cap
@@ -277,7 +277,7 @@ def create_inputs(
 
 # TODO: Investigate errors on MI250.
 @require_e2e
-# @require_cdna3
+@require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
@@ -421,7 +421,7 @@ def testExtendAttention(
 
 # TODO: Investigate errors on MI250.
 @require_e2e
-# @require_cdna3
+@require_cdna3
 @pytest.mark.parametrize("shape", get_test_shapes("extend"))
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize("enable_scheduling", [False])
