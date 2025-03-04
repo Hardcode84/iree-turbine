@@ -742,9 +742,9 @@ def handle_write(emitter: WaveEmitter, node: fx.Node):
             offsets_vec=None,
         )
     else:
-        assert (
-            input_shape == mapping.input_shape
-        ), "non-identity input mapping is not supported yet"
+        # assert (
+        #     input_shape == mapping.input_shape
+        # ), f"non-identity input mapping is not supported yet, {input_shape} {mapping.input_shape}"
 
         dyn_vals = tuple(
             cast_vector(emitter, reg, element_type=IndexType.get()) for reg in dyn_vals

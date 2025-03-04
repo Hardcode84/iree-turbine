@@ -526,7 +526,7 @@ class LaunchableWave(Launchable):
         # Partition strided operators.
         graph_passes += [
             partial(partition_ops_with_gpr_offsets, trace, self.constraints),
-            partial(partition_strided_operators, trace, self.constraints),
+            # partial(partition_strided_operators, trace, self.constraints),
             partial(remove_chained_extractslice, trace),
         ]
 

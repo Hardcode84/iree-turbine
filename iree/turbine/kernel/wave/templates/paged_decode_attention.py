@@ -197,6 +197,12 @@ def get_paged_decode_attention_kernels(
         dynamic_val_mappings={S: i},
     )
 
+    out_mapping = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={U: i, S: j, N: k, B: l},
+        outputs={U: i, S: j, N: k, B: l},
+    )
+
     k_layout = tkl.MemoryLayout(shape=k_shape)
     v_layout = tkl.MemoryLayout(shape=v_shape)
     block_table_layout = tkl.MemoryLayout(shape=block_table_shape)
@@ -212,7 +218,7 @@ def get_paged_decode_attention_kernels(
         block_table: tkl.Memory[
             S, T, GLOBAL_ADDRESS_SPACE, tkl.i32, block_table_layout
         ],
-        output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        output: tkl.Memory[U, S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         # =========================================================================
@@ -293,11 +299,16 @@ def get_paged_decode_attention_kernels(
             res_max_log_sum = res_max + tkw.log2(res_sum)
 
             tkw.write(res_max_log_sum, output_max, elements_per_thread=1)
-            tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
+            tkw.write(
+                res,
+                output,
+                mapping=out_mapping,
+                elements_per_thread=STORE_ELEMS_PER_THREAD,
+            )
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(
-        logits: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        logits: tkl.Memory[U, S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16],
     ):
@@ -311,7 +322,11 @@ def get_paged_decode_attention_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, B, N, tkl.f32],
         ):
-            x_j = tkw.read(logits, elements_per_thread=PHASE_1_ELEMS_PER_THREAD)
+            x_j = tkw.read(
+                logits,
+                mapping=out_mapping,
+                elements_per_thread=PHASE_1_ELEMS_PER_THREAD,
+            )
             xm_j = tkw.read(logits_max, elements_per_thread=PHASE_1_ELEMS_PER_THREAD)
             m_j = tkw.maximum(xm_j, partial_max)
             old_scale = tkw.exp2(partial_max - m_j)

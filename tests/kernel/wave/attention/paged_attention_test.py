@@ -243,8 +243,8 @@ def testPagedFlashDecoding(
     phase_0_output = device_zeros(
         num_kv_splits,
         shape.num_seqs,
-        shape.head_size_kv,
         shape.num_query_heads,
+        shape.head_size_kv,
         dtype=torch.float32,
     )
     phase_0_output_max = device_zeros(
