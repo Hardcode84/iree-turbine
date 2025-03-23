@@ -425,6 +425,10 @@ def get_paged_decode_attention_mha_kernels(
                 K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2), start=SPLIT_OFF
             )
         ]
+        # constraints += [tkw.WorkgroupConstraint(N, N, 3)]
+        # constraints += [tkw.WaveConstraint(N, N)]
+        # constraints += [tkw.WorkgroupConstraint(K1, K1, 4)]
+        # constraints += [tkw.WaveConstraint(K1, K1)]
 
         # B is the head index and is distributed across workgroups and waves
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1)]
@@ -432,13 +436,14 @@ def get_paged_decode_attention_mha_kernels(
 
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
 
-        vector_shapes = {S: 0, U: 1}
-        waves_per_block = (1, B_WAVES, 1)
+        # vector_shapes = {S: 0, U: 1}
+        vector_shapes = {S: 0, U: 1, B: 8, K1: 8, K2: 8, N: 8}
+        waves_per_block = (1, B_WAVES, 1, 1, 1)
         constraints += [
             tkw.HardwareConstraint(
                 threads_per_wave=THREADS_PER_WAVE,
                 waves_per_block=waves_per_block,
-                mma_type=mfma_variant[1],
+                # mma_type=mfma_variant[1],
                 vector_shapes=vector_shapes,
             )
         ]
@@ -583,7 +588,7 @@ def get_paged_decode_attention_mha_kernels(
             )
             block_indices_k = tkw.read(
                 block_table,
-                elements_per_thread=1,
+                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=block_table_mapping,
                 mapping_dynamic_vals=(req_index,),
             )
@@ -593,9 +598,13 @@ def get_paged_decode_attention_mha_kernels(
                 mapping=k_mapping,
                 mapping_dynamic_vals=(block_indices_k,),
             )
-            imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
-            inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
-            x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
+            # imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
+            # inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
+            # x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
+            q_reg = tkw.broadcast(q_reg, target_shape=[S, B, K2, K1])
+            inner_acc = q_reg * k_reg
+            inner_acc = tkw.cast(inner_acc, tkl.f32)
+            x_j = tkw.sum(inner_acc, dim=K1)
             k2_index = tkw.self_index(K2, tkl.i32)
             mask = tkw.apply_expr(k2_index, lambda x: x < (SPLIT_OFF + SPLIT_LEN))
             mask = tkw.broadcast(mask, target_shape=[B, K2])
@@ -615,7 +624,11 @@ def get_paged_decode_attention_mha_kernels(
                 mapping_dynamic_vals=(block_indices_v,),
             )
             new_acc = acc * e_delta_max
-            acc = tkw.mma(v_reg, imm_f16, new_acc)
+            # acc = tkw.mma(v_reg, imm_f16, new_acc)
+            acc = v_reg * imm_f16
+            acc = tkw.cast(acc, tkl.f32)
+            acc = tkw.sum(acc, new_acc, dim=K2)
+            # acc = tkw.permute(acc, target_shape=[S, N, B])
             return m_j, d_j, acc
 
         res_max, res_sum, res_mm = loop
@@ -674,10 +687,10 @@ def get_paged_decode_attention_mha_kernels(
 
     symbols_0 = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD_QK: get_mfma_load_elems_per_thread(mfma_variant[0]),
-        LOAD_ELEMS_PER_THREAD_V: get_mfma_load_elems_per_thread(mfma_variant[1]),
-        STORE_ELEMS_PER_THREAD: get_mfma_store_elems_per_thread(mfma_variant[1]),
-        BLOCK_B: 64,
+        LOAD_ELEMS_PER_THREAD_QK: 8,  # get_mfma_load_elems_per_thread(mfma_variant[0]),
+        LOAD_ELEMS_PER_THREAD_V: 8,  # get_mfma_load_elems_per_thread(mfma_variant[1]),
+        STORE_ELEMS_PER_THREAD: 8,  # get_mfma_store_elems_per_thread(mfma_variant[1]),
+        BLOCK_B: 16,
         BLOCK_S: 1,
         BLOCK_U: 1,
         BLOCK_K2: 16,

@@ -274,7 +274,8 @@ class HardwareConstraint(Constraint):
             case 2:
                 return THREAD_2
             case _:
-                raise ValueError("Invalid workgroup dimension. Expected 0, 1 or 2.")
+                return Integer(0)
+                # raise ValueError("Invalid workgroup dimension. Expected 0, 1 or 2.")
 
     def mma_matrix_shapes(self, mma_type: Optional[MMAType]) -> tuple[int]:
         # TODO: Eventually the shapes and indices should be provided by a tool

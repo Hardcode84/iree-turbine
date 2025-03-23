@@ -65,9 +65,7 @@ def get_dim_scaling(
 
     idxc = IndexingContext.current()
     for constraint in constraints:
-        if isinstance(constraint, WorkgroupConstraint) or isinstance(
-            constraint, TilingConstraint
-        ):
+        if isinstance(constraint, (WorkgroupConstraint, TilingConstraint)):
             hw_cons = hardware_constraints[0]
             tile_size = idxc.get_static_value(constraint.tile_size)
             if constraint.dim not in node.vector_shapes:
