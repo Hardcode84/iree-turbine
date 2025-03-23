@@ -25,7 +25,7 @@ from ..ops.wave_ops import (
 )
 from ..lang.global_symbols import *
 
-from .utils import DCE, subs_idxc, all_equal
+from .utils import DCE, subs_idxc, all_equal, safe_subs
 import torch.fx as fx
 import math
 from typing import Callable
@@ -63,9 +63,9 @@ def determine_shuffle_config(
         WORKGROUP_1,
         WORKGROUP_2,
     ] + induction_vars
-    offset = access_pattern.start.subs({k: 0 for k in ignore})
+    offset = safe_subs(access_pattern.start, {k: 0 for k in ignore})
     offset = subs_idxc(offset)
-    offset_table = [offset.subs({THREAD_0: i}) for i in range(subgroup_size)]
+    offset_table = [safe_subs(offset, {THREAD_0: i}) for i in range(subgroup_size)]
     unique_offsets = list(dict.fromkeys(offset_table))
     # The cluster size represents the number of unique threads that are participating in a shuffle.
     # We can obtain this information by just computing the number of unique entries in the offset table.
@@ -75,7 +75,7 @@ def determine_shuffle_config(
         thread_ids.append(offset_table.index(thread_offset))
     cluster_stride = [x - y for x, y in zip(thread_ids[1:], thread_ids[:-1])]
     assert all_equal(cluster_stride), f"Cluster stride must be equal across threads."
-    return cluster_size, cluster_stride[0]
+    return cluster_size, cluster_stride[0] if cluster_size > 1 else 1
 
 
 def get_graph_node(custom: CustomOp, graph: fx.Graph):

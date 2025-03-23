@@ -16,6 +16,7 @@ from ...ops.wave_ops import (
     Placeholder,
     Read,
     Reduction,
+    ReduceOp,
     Write,
     get_custom,
 )
@@ -105,8 +106,12 @@ def verify_nodes(trace: CapturedTrace, constraints: list[Constraint]):
         if not custom.vector_shapes:
             # If vector_shapes is not set, see if it can be derived from the hardware constraints.
             hw_constraint = get_hardware_constraint(constraints)
+            dims = list(custom.index.keys())
+            if isinstance(custom, ReduceOp):
+                dims = dims + [custom.dim]
+
             update_vector_shapes = [
-                dim for dim in custom.index if dim in hw_constraint.vector_shapes
+                dim for dim in dims if dim in hw_constraint.vector_shapes
             ]
             if update_vector_shapes:
                 custom.vector_shapes = {}
