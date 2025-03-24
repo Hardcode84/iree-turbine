@@ -523,8 +523,8 @@ def get_paged_decode_attention_mha_kernels(
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
         q: tkl.Memory[S, B, K1, GLOBAL_ADDRESS_SPACE, tkl.f16],
-        k: tkl.Memory[S, K2, B, K1, ADDRESS_SPACE, tkl.f16, k_layout],
-        v: tkl.Memory[S, K2, B, N, ADDRESS_SPACE, tkl.f16, v_layout],
+        k: tkl.Memory[S, K2, B, K1, GLOBAL_ADDRESS_SPACE, tkl.f16, k_layout],
+        v: tkl.Memory[S, K2, B, N, GLOBAL_ADDRESS_SPACE, tkl.f16, v_layout],
         request_indices: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         sequence_lengths: tkl.Memory[S, GLOBAL_ADDRESS_SPACE, tkl.i32],
         block_table: tkl.Memory[
@@ -619,7 +619,7 @@ def get_paged_decode_attention_mha_kernels(
             imm_f16 = tkw.cast(e_delta, tkl.f16)
             v_reg = tkw.read(
                 v,
-                elements_per_thread=LOAD_ELEMS_PER_THREAD_V,
+                elements_per_thread=1,  # LOAD_ELEMS_PER_THREAD_V,
                 mapping=v_mapping,
                 mapping_dynamic_vals=(block_indices_v,),
             )
@@ -640,7 +640,8 @@ def get_paged_decode_attention_mha_kernels(
             res_max_log_sum = res_max + tkw.log2(res_sum)
 
             tkw.write(res_max_log_sum, output_max, elements_per_thread=1)
-            tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
+            # tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
+            tkw.write(res, output, elements_per_thread=1)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(
