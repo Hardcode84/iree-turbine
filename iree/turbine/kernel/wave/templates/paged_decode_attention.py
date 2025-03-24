@@ -440,8 +440,8 @@ def get_paged_decode_attention_mha_kernels(
                 K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2), start=SPLIT_OFF
             )
         ]
-        # constraints += [tkw.WorkgroupConstraint(N, N, 3)]
-        # constraints += [tkw.WaveConstraint(N, N)]
+        constraints += [tkw.WorkgroupConstraint(K2, BLOCK_K2, 0, primary=False)]
+        constraints += [tkw.WaveConstraint(K2, BLOCK_K2)]
         # constraints += [tkw.WorkgroupConstraint(K1, K1, 4)]
         # constraints += [tkw.WaveConstraint(K1, K1)]
 
@@ -452,7 +452,7 @@ def get_paged_decode_attention_mha_kernels(
         constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
 
         # vector_shapes = {S: 0, U: 1}
-        vector_shapes = {S: 0, U: 1, B: 8, K1: 8, K2: 8, N: 8}
+        vector_shapes = {S: 0, U: 1, B: 8, K1: 8, K2: BLOCK_K2, N: 8}
         waves_per_block = (1, B_WAVES, 1)
         constraints += [
             tkw.HardwareConstraint(
