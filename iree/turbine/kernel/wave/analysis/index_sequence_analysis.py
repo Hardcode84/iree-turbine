@@ -24,6 +24,7 @@ from ...ops.wave_ops import (
 from ..constraints import (
     Constraint,
     HardwareConstraint,
+    ThreadConstraint,
     TilingConstraint,
     WorkgroupConstraint,
 )

@@ -646,8 +646,19 @@ class ThreadConstraint(Constraint):
     workgroup_dim: int
 
     def apply(self) -> IndexSequence:
+        return IndexSequence(0, 1)
+
+    def apply_read_write_thread_mapping(
+        self,
+        dim: IndexSymbol,
+        workgroup_dim: int,
+        elements_per_thread: int | IndexSymbol,
+        stride: int,
+    ) -> IndexSequence:
         thread_id = [THREAD_0, THREAD_1, THREAD_2][self.workgroup_dim]
-        return IndexSequence(thread_id, 1)
+        return IndexSequence(
+            thread_id * elements_per_thread, elements_per_thread, stride
+        )
 
 
 @dataclass
