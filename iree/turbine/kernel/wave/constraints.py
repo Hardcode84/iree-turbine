@@ -641,7 +641,7 @@ class TilingConstraint(DistributionConstraint):
 
 
 @dataclass
-class ThreadConstraint(Constraint):
+class ThreadConstraint(DistributionConstraint):
     """
     A constraint of the form `tkw.ThreadConstraint(M, 0)`
     specifies that we want to distribute dimension M along thread dim 0.
@@ -651,11 +651,20 @@ class ThreadConstraint(Constraint):
 
     dim: IndexExpr
     workgroup_dim: int  # Used by `populate_read_write_source_indices`
+    hw_constraint: Optional[HardwareConstraint] = None
 
     def apply(self) -> IndexSequence:
         # `apply` is called during thread-independent index sequence
-        # initialization. We don't need to do anything here.
+        # initialization. We don't need to do anything here as we are
+        # depending on workgroup id.
         return IndexSequence(0, 1)
+
+    @property
+    def work_bound(self) -> IndexExpr:
+        if self.hw_constraint is None:
+            raise ValueError("Hardware constraint not set")
+
+        return self.hw_constraint.threads_per_block[self.workgroup_dim]
 
 
 @dataclass
