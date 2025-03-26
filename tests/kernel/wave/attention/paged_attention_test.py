@@ -444,17 +444,8 @@ def testPagedFlashDecodingMHA(
     )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())
-    config = get_default_run_config()
     run_bench = request.config.getoption("--runperf")
     dump_perf = request.config.getoption("--dump-perf-files-path")
-    if run_bench:
-        config["benchmark_batch_size"] = 10
-        config["benchmark_repetitions"] = 3
-    if dump_perf is not None:
-        perf_filename = request.node.name + ".json"
-        config["benchmark_results_file"] = os.path.join(
-            dump_perf, "tk_" + perf_filename
-        )
 
     phase_0_output = device_zeros(
         num_kv_splits,
@@ -472,38 +463,54 @@ def testPagedFlashDecodingMHA(
     log2e = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
 
-    with tk.gen.TestLaunchContext(
-        hyperparams_0,
+    options = WaveCompileOptions(
+        subs=hyperparams_0,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        # TODO: Add scaling of QK as part of kernel.
-        # TODO: Add variant of non-transposed V attention kernel.
-        asm_qk = phase_0(
-            query * dk_sqrt * log2e,
-            key_cache_4d,
-            value_cache_4d,
-            request_indices,
-            kv_lens_tensor,
-            block_table,
-            phase_0_output,
-            phase_0_output_max,
-        )
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    phase_0 = wave_compile(options, phase_0)
 
-    with tk.gen.TestLaunchContext(
-        hyperparams_1,
+    # TODO: Add scaling of QK as part of kernel.
+    # TODO: Add variant of non-transposed V attention kernel.
+    asm_qk = phase_0(
+        query * dk_sqrt * log2e,
+        key_cache_4d,
+        value_cache_4d,
+        request_indices,
+        kv_lens_tensor,
+        block_table,
+        phase_0_output,
+        phase_0_output_max,
+    )
+
+    options = WaveCompileOptions(
+        subs=hyperparams_1,
         canonicalize=True,
-        run=True,
         run_bench=run_bench,
-        run_config=config,
         schedule=enable_scheduling,
         use_scheduling_barriers=enable_scheduling_barriers,
-    ):
-        asm_sv = phase_1(phase_0_output, phase_0_output_max, kv_lens_tensor, output)
+        benchmark_batch_size=10,
+        benchmark_repetitions=3,
+        benchmark_results_file=(
+            os.path.join(dump_perf, "tk_" + request.node.name + ".json")
+            if dump_perf
+            else None
+        ),
+    )
+    options = set_default_run_config(options)
+    phase_1 = wave_compile(options, phase_1)
+
+    asm_sv = phase_1(phase_0_output, phase_0_output_max, kv_lens_tensor, output)
 
     if dump_generated_mlir:
         filename = f"wave_paged_mha_phase_0_kernel_{'x'.join(map(str, shape))}.mlir"
