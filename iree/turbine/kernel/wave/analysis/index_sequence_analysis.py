@@ -138,9 +138,6 @@ def set_node_indices(
     print_ir_before: Sequence[str] = [],
     print_ir_after: Sequence[str] = [],
 ):
-    mma_mapping = get_mma_dimensional_mapping(
-        trace, get_hardware_constraint(constraints)
-    )
     trace.walk(partial(set_thread_independent_index, constraints))
 
     if (
@@ -316,6 +313,24 @@ def populate_mma_source_indices(
     del acc_tuple[1][node.reduction_dim]
     del mma_tuple[1][node.reduction_dim]
     return [lhs_tuple, rhs_tuple, acc_tuple, mma_tuple]
+
+
+def collect_parent_redutions(root: CustomOp) -> list[Reduction]:
+    """
+    Collect all the parent reductions of the given node, starting from the most nested one.
+    """
+    ret = []
+    while True:
+        parent = getattr(root.graph, "parent_op", None)
+        if not parent:
+            break
+
+        parent = get_custom(parent)
+        if isinstance(parent, Reduction):
+            ret.append(parent)
+
+        root = parent
+    return ret
 
 
 def populate_read_write_source_indices(
