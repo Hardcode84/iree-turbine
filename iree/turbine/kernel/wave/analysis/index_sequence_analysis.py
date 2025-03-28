@@ -637,6 +637,8 @@ def get_reduce_mapping(
             ), f"Multiple workgroup constraints for dimension {dim}"
             if wg_constraint:
                 workgroup_dim = wg_constraint[0].workgroup_dim
+                if workgroup_dim == 0:
+                    continue
             else:
                 continue
 
