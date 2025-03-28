@@ -426,11 +426,11 @@ def get_paged_decode_attention_mha_kernels(
             )
         ]
 
-        k2_func = lambda x: 0
-        constraints += [
-            tkw.WorkgroupConstraint(K2, BLOCK_K2, 0, apply_fn=k2_func, primary=False)
-        ]
-        constraints += [tkw.WaveConstraint(K2, BLOCK_K2)]
+        # k2_func = lambda x: 0
+        # constraints += [
+        #     tkw.WorkgroupConstraint(K2, BLOCK_K2, 0, apply_fn=k2_func, primary=False)
+        # ]
+        # constraints += [tkw.WaveConstraint(K2, BLOCK_K2)]
         # constraints += [tkw.WorkgroupConstraint(K1, K1, 4)]
         # constraints += [tkw.WaveConstraint(K1, K1)]
 
