@@ -142,6 +142,9 @@ def set_node_indices(
     print_ir_before: Sequence[str] = [],
     print_ir_after: Sequence[str] = [],
 ):
+    mma_mapping = get_mma_dimensional_mapping(
+        trace, get_hardware_constraint(constraints)
+    )
     trace.walk(partial(set_thread_independent_index, constraints))
 
     if (
