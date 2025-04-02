@@ -400,10 +400,6 @@ def get_paged_decode_attention_mha_kernels(
     BLOCK_S = tkl.sym.BLOCK_S
     # Address space (for GPU, shared(1) or global(0))
     ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
-    # Other hyperparameters
-    LOAD_ELEMS_PER_THREAD_QK = index_symbol("LOAD_ELEMS_PER_THREAD_QK")
-    LOAD_ELEMS_PER_THREAD_V = index_symbol("LOAD_ELEMS_PER_THREAD_V")
-    STORE_ELEMS_PER_THREAD = tkl.sym.STORE_ELEMS_PER_THREAD
 
     class Phase(Enum):
         PHASE_0 = (0,)
@@ -555,9 +551,9 @@ def get_paged_decode_attention_mha_kernels(
         neg_infinity = tkl.Register[B, K2, tkl.f32](-1e6)
 
         # The request index is used to load the appropriate entries from the block table.
-        req_index = tkw.read(request_indices, elements_per_thread=1)
+        req_index = tkw.read(request_indices)
         # The sequence length is used to control the bounds of the loop over K2.
-        seq_length = tkw.read(sequence_lengths, elements_per_thread=1)
+        seq_length = tkw.read(sequence_lengths)
         tkw.set_symbol(SEQ_LEN, seq_length)
 
         seq_length_per_split = tkw.apply_expr(
@@ -583,22 +579,19 @@ def get_paged_decode_attention_mha_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, N, B, tkl.f32],
         ):
-            q_reg = tkw.read(q, elements_per_thread=LOAD_ELEMS_PER_THREAD_QK)
+            q_reg = tkw.read(q)
             block_indices_v = tkw.read(
                 block_table,
-                elements_per_thread=LOAD_ELEMS_PER_THREAD_V,
                 mapping=block_table_mapping,
                 mapping_dynamic_vals=(req_index,),
             )
             block_indices_k = tkw.read(
                 block_table,
-                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=block_table_mapping,
                 mapping_dynamic_vals=(req_index,),
             )
             k_reg = tkw.read(
                 k,
-                elements_per_thread=LOAD_ELEMS_PER_THREAD_QK,
                 mapping=k_mapping,
                 mapping_dynamic_vals=(block_indices_k,),
             )
@@ -623,7 +616,6 @@ def get_paged_decode_attention_mha_kernels(
             imm_f16 = tkw.cast(e_delta, tkl.f16)
             v_reg = tkw.read(
                 v,
-                elements_per_thread=1,  # LOAD_ELEMS_PER_THREAD_V,
                 mapping=v_mapping,
                 mapping_dynamic_vals=(block_indices_v,),
             )
@@ -643,9 +635,8 @@ def get_paged_decode_attention_mha_kernels(
             res = res_mm * reciprocal_sum
             res_max_log_sum = res_max + tkw.log2(res_sum)
 
-            tkw.write(res_max_log_sum, output_max, elements_per_thread=1)
-            # tkw.write(res, output, elements_per_thread=STORE_ELEMS_PER_THREAD)
-            tkw.write(res, output, elements_per_thread=1)
+            tkw.write(res_max_log_sum, output_max)
+            tkw.write(res, output)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(
@@ -692,13 +683,10 @@ def get_paged_decode_attention_mha_kernels(
 
     symbols_0 = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        LOAD_ELEMS_PER_THREAD_QK: 8,  # get_mfma_load_elems_per_thread(mfma_variant[0]),
-        LOAD_ELEMS_PER_THREAD_V: 8,  # get_mfma_load_elems_per_thread(mfma_variant[1]),
-        STORE_ELEMS_PER_THREAD: 8,  # get_mfma_store_elems_per_thread(mfma_variant[1]),
-        BLOCK_B: 16,
+        BLOCK_B: 64,
         BLOCK_S: 1,
         BLOCK_U: 1,
-        BLOCK_K2: 16,
+        BLOCK_K2: 64,
         B: shape.num_query_heads,
         M: 1,
         N: shape.head_size_kv,
