@@ -2126,10 +2126,11 @@ class Permute(CustomOp, ABC):
         src_to_target = {
             src: self.target_shape[src_shape.index(src)] for src in src_shape
         }
+
         permuted_index = {
             k: IndexSequence(v.start, v.size, index[src_to_target[k]].stride)
             for k, v in index.items()
-            if k in src_shape
+            if k in src_shape and src_to_target[k] in index
         }
         return permuted_index
 
