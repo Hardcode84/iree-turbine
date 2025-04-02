@@ -601,7 +601,7 @@ def get_paged_decode_attention_mha_kernels(
             q_reg = tkw.broadcast(q_reg, target_shape=[S, B, K2, K1])
             inner_acc = q_reg * k_reg
             inner_acc = tkw.cast(inner_acc, tkl.f32)
-            x_j = tkw.sum(inner_acc, dim=K1)
+            x_j = tkw.sum(inner_acc, dim=K1)  # [S, B, K2]
             k2_index = tkw.self_index(K2, tkl.i32)
             mask = tkw.apply_expr(k2_index, lambda x: x < (SPLIT_OFF + SPLIT_LEN))
             mask = tkw.broadcast(mask, target_shape=[B, K2])
@@ -618,13 +618,14 @@ def get_paged_decode_attention_mha_kernels(
                 v,
                 mapping=v_mapping,
                 mapping_dynamic_vals=(block_indices_v,),
-            )
+            )  # [S, B, N, K2]
             new_acc = acc * e_delta_max
             # acc = tkw.mma(v_reg, imm_f16, new_acc)
+            imm_f16 = tkw.broadcast(imm_f16, target_shape=[S, B, N, K2])
             acc = v_reg * imm_f16
             acc = tkw.cast(acc, tkl.f32)
             acc = tkw.sum(acc, new_acc, dim=K2)
-            # acc = tkw.permute(acc, target_shape=[S, N, B])
+            acc = tkw.permute(acc, target_shape=[S, N, B])
             return m_j, d_j, acc
 
         res_max, res_sum, res_mm = loop
