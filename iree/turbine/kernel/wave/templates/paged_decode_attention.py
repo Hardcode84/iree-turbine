@@ -624,8 +624,8 @@ def get_paged_decode_attention_mha_kernels(
             imm_f16 = tkw.broadcast(imm_f16, target_shape=[S, B, N, K2])
             acc = v_reg * imm_f16
             acc = tkw.cast(acc, tkl.f32)
+            acc = tkw.permute(acc, target_shape=[S, N, B, K2])
             acc = tkw.sum(acc, new_acc, dim=K2)
-            acc = tkw.permute(acc, target_shape=[S, N, B])
             return m_j, d_j, acc
 
         res_max, res_sum, res_mm = loop
