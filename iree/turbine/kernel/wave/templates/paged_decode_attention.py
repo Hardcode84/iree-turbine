@@ -434,7 +434,7 @@ def get_paged_decode_attention_mha_kernels(
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1)]
         constraints += [tkw.WaveConstraint(B, BLOCK_B / B_WAVES)]
 
-        constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
+        constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 3)]
 
         # vector_shapes = {S: 0, U: 1}
         vector_shapes = {S: 0, U: 1, B: 8, K1: K1, K2: BLOCK_K2, N: 8}
