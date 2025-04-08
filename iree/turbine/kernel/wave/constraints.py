@@ -42,6 +42,8 @@ Values: 0xABCD where:
 
 
 class MMAType(Enum):
+    GenericDot = 0x0000
+
     # Intrinsics introduced in CDNA1
     F32_16x16x16_F16 = 0x1020
     F32_32x32x8_F16 = 0x1021
