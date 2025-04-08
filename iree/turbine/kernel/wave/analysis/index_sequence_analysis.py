@@ -587,9 +587,10 @@ def get_reduce_mapping(
             vector_size % threads_per_wave == 0
         ), f"Vector size {dim}={vector_size} must be divisible by threads per wave {threads_per_wave}"
         elements_per_thread = vector_size // threads_per_wave
-        stride = compute_stride(
-            custom.indexing_dims, hardware_constraint.vector_shapes, dim
-        )
+        # stride = compute_stride(
+        #     custom.indexing_dims, hardware_constraint.vector_shapes, dim
+        # )
+        stride = 1
         index[dim] = hardware_constraint.apply_read_write_thread_mapping(
             dim, 0, elements_per_thread, stride
         )
@@ -606,6 +607,8 @@ def get_reduce_mapping(
             if wg_constraint:
                 workgroup_dim = wg_constraint[0].workgroup_dim
             else:
+                elements_per_thread = hardware_constraint.vector_shapes[dim]
+                index[dim] = IndexSequence(0, elements_per_thread, stride)
                 continue
 
             index[dim] = hardware_constraint.apply_read_write_thread_mapping(
