@@ -1752,6 +1752,7 @@ class Extract(CustomOp):
 
     register_: fx.Proxy
     offset: IndexExpr | int
+    dim: Optional[IndexSymbol] = None
 
     def infer_type(self):
         # Intuition here is we are trying to extract an element
@@ -1762,18 +1763,26 @@ class Extract(CustomOp):
             self.type = src_type
             return
 
-        # Typically fastest dim is the last dimension,
-        # If non-unit dim exists => non-unit dim is fastest dim.
-        non_unit_dim = [k for k, v in self.register_.index.items() if v.size != 1]
-        if len(non_unit_dim) > 1:
-            raise NotImplementedError(
-                f"NYI: Extract only support 1 non-unit dim, but found: {len(non_unit_dim)}"
-            )
-        dst_shape = list(src_type.symbolic_shape)
-        dim_to_remove = dst_shape[-1] if not non_unit_dim else non_unit_dim[0]
-        dst_shape.remove(dim_to_remove)
-        dst_type = Register[(*dst_shape, src_type.dtype)]
-        self.type = dst_type
+        if self.dim is not None:
+            dst_shape = list(src_type.symbolic_shape)
+            dim_to_remove = self.dim
+            dst_shape.remove(dim_to_remove)
+            dst_type = Register[(*dst_shape, src_type.dtype)]
+            self.type = dst_type
+        else:
+            # Typically fastest dim is the last dimension,
+            # If non-unit dim exists => non-unit dim is fastest dim.
+            non_unit_dim = [k for k, v in self.register_.index.items() if v.size != 1]
+            if len(non_unit_dim) > 1:
+                raise NotImplementedError(
+                    f"NYI: Extract only support 1 non-unit dim, but found: {len(non_unit_dim)}"
+                )
+
+            dst_shape = list(src_type.symbolic_shape)
+            dim_to_remove = dst_shape[-1] if not non_unit_dim else non_unit_dim[0]
+            dst_shape.remove(dim_to_remove)
+            dst_type = Register[(*dst_shape, src_type.dtype)]
+            self.type = dst_type
 
 
 @define_op("extract_slice")

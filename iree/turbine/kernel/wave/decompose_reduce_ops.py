@@ -105,9 +105,12 @@ def emit_variable_reduction(
     """
     Does reduction over a singular fx.Node variable.
     """
-    init = get_graph_node(Extract(src, [0]), graph)
+    import iree.turbine.kernel.lang as tkl
+
+    N = tkl.sym.N
+    init = get_graph_node(Extract(src, [0], N), graph)
     for i in range(1, local_reduction_size):
-        cur_slice = get_graph_node(Extract(src, [i]), graph)
+        cur_slice = get_graph_node(Extract(src, [i], N), graph)
         init = get_graph_node(binary_fn(init, cur_slice), graph)
     return init
 
@@ -250,6 +253,7 @@ def decompose_reduce_ops(
                         f"{index_str}\n{reduction_src=}\n{reduction_acc=}\n{reduction_dim=}"
                     ) from e
 
+            local_reduce_sizes = [1]
             if not all_equal(local_reduce_sizes):
                 raise NotImplementedError(
                     "NYI: Expect all reduce_src to have same local reduce size."

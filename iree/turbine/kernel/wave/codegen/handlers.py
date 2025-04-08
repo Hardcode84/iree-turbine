@@ -867,7 +867,7 @@ def handle_scheduling_group_barrier(emitter: WaveEmitter, node: fx.Node):
 @handle_op(extract)
 def handle_extract(emitter: WaveEmitter, node: fx.Node):
     try:
-        register, offset = node.args
+        register, offset, _ = node.args
     except ValueError as e:
         raise ValidationError("Malformed arguments") from e
     assert isinstance(offset, list) and len(offset) == 1
