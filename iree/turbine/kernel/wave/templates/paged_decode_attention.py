@@ -612,14 +612,14 @@ def get_paged_decode_attention_mha_kernels(
             e_delta_max = tkw.exp2(partial_max - m_j)
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
-            d_j = tkw.sum(e_delta, e_init, dim=K2)
+            d_j = tkw.sum(e_delta, e_init, dim=K2)  # [S, B]
             imm_f16 = tkw.cast(e_delta, tkl.f16)
             v_reg = tkw.read(
                 v,
                 mapping=v_mapping,
                 mapping_dynamic_vals=(block_indices_v,),
             )  # [S, B, N, K2]
-            new_acc = acc * e_delta_max
+            new_acc = acc * e_delta_max  # [S, N, B]
             # acc = tkw.mma(v_reg, imm_f16, new_acc)
             imm_f16 = tkw.broadcast(imm_f16, target_shape=[S, B, N, K2])
             acc = v_reg * imm_f16
