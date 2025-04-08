@@ -1108,6 +1108,79 @@ def test_toy_online_softmax(shape):
 
 
 @require_e2e
+@pytest.mark.parametrize("shape", get_test_shapes("test_tiled_reduce_max"))
+def test_toy_online_softmax_b(shape):
+    shape = (shape[0], 8, shape[1])
+    B = tkl.sym.B
+    M = tkl.sym.M
+    N = tkl.sym.N
+    wave_size = 64
+    BLOCK_M = 1
+    BLOCK_N = tkl.sym.BLOCK_N
+    ADDRESS_SPACE = tkl.sym.ADDRESS_SPACE
+
+    constraints: list[tkw.Constraint] = [
+        tkw.HardwareConstraint(
+            threads_per_wave=wave_size,
+            waves_per_block=(1, 1, 1),
+            vector_shapes={M: 1, N: BLOCK_N, B: 8},
+        )
+    ]
+    constraints += [tkw.WorkgroupConstraint(M, BLOCK_M, 1)]
+    constraints += [tkw.TilingConstraint(N, BLOCK_N)]
+    constraints += [tkw.WaveConstraint(M, BLOCK_M)]
+
+    @tkw.wave(constraints)
+    def test(
+        a: tkl.Memory[M, B, N, ADDRESS_SPACE, tkl.f32],
+        b: tkl.Memory[M, B, N, ADDRESS_SPACE, tkl.f32],
+        c: tkl.Memory[M, B, ADDRESS_SPACE, tkl.f32],
+    ):
+        init_max = tkl.Register[M, B, tkl.f32](-1e6)
+        init_sum = tkl.Register[M, B, tkl.f32](0)
+
+        @tkw.reduction(N, init_args=[init_max, init_sum])
+        def repeat(
+            partial_max: tkl.Register[M, B, tkl.f32],
+            partial_sum: tkl.Register[M, B, tkl.f32],
+        ) -> tkl.Register[M, tkl.f32]:
+            lhs = tkw.read(a)
+            rhs = tkw.read(b)
+            res = lhs * rhs
+            partial_max = tkw.max(res, partial_max, dim=N)
+            partial_sum = tkw.sum(res, partial_sum, dim=N)
+            return partial_max, partial_sum
+
+        res_max, res_sum = repeat
+        result = res_max / res_sum
+        tkw.write(result, c)
+
+    torch.manual_seed(1)
+    a = device_randn(shape, dtype=torch.float32)
+    b = device_randn(shape, dtype=torch.float32)
+    c = device_zeros((shape[0], shape[1]), dtype=torch.float32)
+    ref_max = torch.max((a * b), dim=-1).values
+    ref_sum = torch.sum((a * b), dim=-1)
+    ref = ref_max / ref_sum
+    options = WaveCompileOptions(
+        subs={
+            B: shape[1],
+            M: shape[0],
+            N: shape[2],
+            BLOCK_N: max(min(128, shape[2]), wave_size),
+            ADDRESS_SPACE: tkl.AddressSpace.GLOBAL_MEMORY.value,
+        },
+        canonicalize=True,
+        run_bench=False,
+    )
+    options = set_default_run_config(options)
+    test = wave_compile(options, test)
+
+    test(a, b, c)
+    assert_close(ref, c, atol=0.1, rtol=1e-4)
+
+
+@require_e2e
 def test_im2col(request):
     run_bench = request.config.getoption("--runperf")
     # TODO: we don't support unaligned access at the moment so all sizes must
