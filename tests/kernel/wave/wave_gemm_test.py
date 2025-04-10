@@ -368,7 +368,7 @@ def testGemmDot(
 @pytest.mark.parametrize("shape", [(4, 64, 8)])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn")
-@pytest.mark.parametrize("mfma_variant", [MMAType.GenericDot])
+@pytest.mark.parametrize("mfma_variant", [GenericDot()])
 def testGemmDot(
     shape: tuple[int],
     enable_scheduling: SchedulingType,

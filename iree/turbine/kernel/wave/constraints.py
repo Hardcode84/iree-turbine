@@ -42,8 +42,6 @@ Values: 0xABCD where:
 
 
 class MMAType(Enum):
-    GenericDot = 0x0000
-
     # Intrinsics introduced in CDNA1
     F32_16x16x16_F16 = 0x1020
     F32_32x32x8_F16 = 0x1021
@@ -59,6 +57,45 @@ class MMAType(Enum):
     F32_32x32x16_K4_F8 = 0x1233
     I32_16x16x32_I8 = 0x12C0
     I32_32x32x16_I8 = 0x12C1
+
+
+@dataclass
+class GenericDot:
+    out_vec_size: int = 4
+    k_size: int = 4
+
+    def get_shape(self, threads_per_wave: int) -> tuple[int, int, int]:
+        return (self.out_vec_size, threads_per_wave, self.k_size)
+
+    def get_index_offset(
+        self, lane: IndexExpr, threads_per_wave: int
+    ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
+        return [
+            Piecewise((lane % self.out_vec_size, ~MMA_ACC), (0, MMA_ACC)),  # M
+            lane,  # N
+            0,  # K
+        ]
+
+    def get_index_size(
+        self, threads_per_wave: int
+    ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
+        return [
+            Piecewise((1, ~MMA_ACC), (self.out_vec_size, MMA_ACC)),  # M
+            1,  # N
+            self.k_size,  # K
+        ]
+
+    def get_index_stride(
+        self, threads_per_wave: int
+    ) -> tuple[IndexExpr, IndexExpr, IndexExpr]:
+        return [
+            Piecewise((1, ~MMA_ACC), (threads_per_wave, MMA_ACC)),  # M
+            1,  # N
+            self.k_size,  # K
+        ]
+
+    def __hash__(self):
+        return hash((self.out_vec_size, self.k_size))
 
 
 class MMAOperand(Enum):
