@@ -319,7 +319,7 @@ def create_shuffle(
 
 
 def create_swizzle(src: Value, and_mask: int, or_mask: int, xor_mask: int) -> Value:
-    offset_val = and_mask | (or_mask << 4) | (xor_mask << 8)
+    offset_val = and_mask | (or_mask << 5) | (xor_mask << 10)
     i32 = IntegerType.get_signless(32)
     offset = arith_d.constant(i32, offset_val)
 
@@ -364,7 +364,7 @@ def emit_dot(
             if _use_swizzle:
                 xor_mask = 0
                 or_mask = i
-                and_mask = vec_size - 1
+                and_mask = ~(vec_size - 1)
                 a = create_swizzle(a, and_mask, or_mask, xor_mask)
             else:
                 i32 = IntegerType.get_signless(32)
