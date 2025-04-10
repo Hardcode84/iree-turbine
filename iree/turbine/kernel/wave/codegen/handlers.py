@@ -18,30 +18,25 @@ from ..symbolic_constraints import SymbolicAlias
 from ...compiler.ir import (
     Attribute,
     DenseElementsAttr,
-    FloatAttr,
     F16Type,
     F32Type,
     IndexType,
     InsertionPoint,
-    IntegerAttr,
     IntegerType,
     IrType,
-    Location,
     MemRefType,
     OpResult,
-    ShapedType,
     Value,
     VectorType,
     amdgpu_d,
     arith_d,
-    func_d,
     gpu_d,
+    llvm_d,
     math_d,
     memref_d,
-    stream_d,
+    rocdl_d,
     scf_d,
     vector_d,
-    llvm_d,
 )
 from iree.turbine.aot.support.ir_utils import (
     _is_float_type,
@@ -323,6 +318,24 @@ def create_shuffle(
     return compose_values(src.type, result)
 
 
+def create_swizzle(src: Value, and_mask: int, or_mask: int, xor_mask: int) -> Value:
+    offset_val = and_mask | (or_mask << 4) | (xor_mask << 8)
+    i32 = IntegerType.get_signless(32)
+    offset = arith_d.constant(i32, offset_val)
+
+    bitsize = 32
+    values = decompose_value(src, bitsize)
+    result = []
+    for value in values:
+        value = rocdl_d.ds_swizzle(value.type, value, offset)
+        result.append(value)
+
+    return compose_values(src.type, result)
+
+
+_use_swizzle = True
+
+
 def emit_dot(
     emitter: WaveEmitter,
     config: GenericDot,
@@ -343,19 +356,23 @@ def emit_dot(
         return v
 
     vec_size = config.out_vec_size
-    if vec_size > 1:
-        i32 = IntegerType.get_signless(32)
-        width = arith_d.constant(i32, threads_per_wave)
-
     elements = []
     for i in range(vec_size):
         a = src_a
         b = src_b
         if vec_size > 1:
-            offset_expr = ((THREAD_0 % threads_per_wave) // vec_size) * vec_size + i
-            offset = gen_sympy_index(add_emitter_subs(emitter), offset_expr)
-            offset = arith_d.index_cast(i32, offset)
-            a = create_shuffle(a, offset, width, gpu_d.ShuffleMode.IDX)
+            if _use_swizzle:
+                xor_mask = 0
+                or_mask = i
+                and_mask = vec_size - 1
+                a = create_swizzle(a, and_mask, or_mask, xor_mask)
+            else:
+                i32 = IntegerType.get_signless(32)
+                width = arith_d.constant(i32, threads_per_wave)
+                offset_expr = ((THREAD_0 % threads_per_wave) // vec_size) * vec_size + i
+                offset = gen_sympy_index(add_emitter_subs(emitter), offset_expr)
+                offset = arith_d.index_cast(i32, offset)
+                a = create_shuffle(a, offset, width, gpu_d.ShuffleMode.IDX)
 
         a = cast(a)
         b = cast(b)
