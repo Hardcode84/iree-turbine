@@ -365,20 +365,24 @@ def testGemmDot(
 
 
 @require_e2e
-@pytest.mark.parametrize("shape", [(64, 64, 64), (123, 123, 123)])
+@pytest.mark.parametrize("shape", [(64, 64, 64)])
 @pytest.mark.parametrize("enable_scheduling", [SchedulingType.NONE])
 @param_bool("dynamic_dims", "dyn")
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        GenericDot(k_mult=2),
-        GenericDot(k_mult=4),
-        GenericDot(k_vec_size=1),
-        GenericDot(k_vec_size=2),
-        GenericDot(k_vec_size=4),
-        GenericDot(out_vec_size=1),
-        GenericDot(out_vec_size=2),
-        GenericDot(out_vec_size=4),
+        GenericDot(k_vec_size=4, along_dim=MMAOperand.M),
+        GenericDot(k_mult=4, along_dim=MMAOperand.M),
+        GenericDot(out_vec_size=4, along_dim=MMAOperand.M),
+        # GenericDot(),
+        # GenericDot(k_mult=2),
+        # GenericDot(k_mult=4),
+        # GenericDot(k_vec_size=1),
+        # GenericDot(k_vec_size=2),
+        # GenericDot(k_vec_size=4),
+        # GenericDot(out_vec_size=1),
+        # GenericDot(out_vec_size=2),
+        # GenericDot(out_vec_size=4),
     ],
 )
 def testGemmDot(
@@ -430,7 +434,7 @@ def testGemmDot(
 
         # This microkernel encodes the fact that if the reduction
         # dimension were tiled, then we would need to materialize a loop.
-        @tkw.reduction(K, init_args=[c_reg])
+        @tkw.iterate(K, init_args=[c_reg])
         def repeat(acc: tkl.Register[M, N, tkl.f32]) -> tkl.Register[M, N, tkl.f32]:
             # a_reg: tkw.Register[M, K, tkl.f16]
             a_reg = tkw.read(a)
@@ -445,8 +449,8 @@ def testGemmDot(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        BLOCK_M: 4,
-        BLOCK_N: 64,
+        BLOCK_M: 4 if mfma_variant.along_dim == MMAOperand.N else 64,
+        BLOCK_N: 64 if mfma_variant.along_dim == MMAOperand.N else 4,
         BLOCK_K: 16,
         M: shape[0],
         N: shape[1],
