@@ -373,7 +373,7 @@ def testGemmDot(
     [
         GenericDot(k_vec_size=4, along_dim=MMAOperand.M),
         GenericDot(k_mult=4, along_dim=MMAOperand.M),
-        pytest.mark.xfail(GenericDot(out_vec_size=4, along_dim=MMAOperand.M)),
+        _xfail(GenericDot(out_vec_size=4, along_dim=MMAOperand.M)),
         GenericDot(),
         GenericDot(k_mult=2),
         GenericDot(k_mult=4),
