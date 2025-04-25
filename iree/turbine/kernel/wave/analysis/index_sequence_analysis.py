@@ -322,24 +322,6 @@ def populate_mma_source_indices(
     return [lhs_tuple, rhs_tuple, acc_tuple, mma_tuple]
 
 
-def collect_parent_redutions(root: CustomOp) -> list[Iterate]:
-    """
-    Collect all the parent reductions of the given node, starting from the most nested one.
-    """
-    ret = []
-    while True:
-        parent = getattr(root.graph, "parent_op", None)
-        if not parent:
-            break
-
-        parent = get_custom(parent)
-        if isinstance(parent, Iterate):
-            ret.append(parent)
-
-        root = parent
-    return ret
-
-
 def populate_read_write_source_indices(
     node: Read | Write,
     hardware_constraint: HardwareConstraint,
