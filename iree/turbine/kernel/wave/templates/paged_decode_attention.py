@@ -34,7 +34,10 @@ def get_paged_decode_attention_kernels(
     k_shape: tuple[int],
     v_shape: tuple[int],
     block_table_shape: tuple[int],
+    mha: bool = False,
 ):
+    if mha:
+        assert shape.num_query_heads == shape.num_kv_heads
     # Input sizes
     S = tkl.sym.S  # Num seqs
     B = tkl.sym.B
@@ -47,7 +50,10 @@ def get_paged_decode_attention_kernels(
     SPLIT_LEN = tkl.sym.SPLIT_LEN
     SPLITS_ACTIVE = tkl.sym.SPLITS_ACTIVE
     U = tkl.sym.U  # Num splits
-    BH = tkl.sym.BH
+    if mha:
+        BH = B
+    else:
+        BH = tkl.sym.BH
     # Workgroup tile sizes
     BLOCK_B = tkl.sym.BLOCK_B
     BLOCK_BH = tkl.sym.BLOCK_BH
@@ -117,6 +123,36 @@ def get_paged_decode_attention_kernels(
         ]
         return constraints
 
+    def phase_0_constraints_mha():
+        constraints: list[tkw.Constraint] = []
+        # U represents the number of splits of the key-value sequence.
+        # U is parallelizable and is distributed across workgroups.
+        constraints += [tkw.WorkgroupConstraint(U, BLOCK_U, 2)]
+        constraints += [
+            tkw.TilingConstraint(
+                K2, BLOCK_K2, iters=sympy.ceiling(SPLIT_LEN / BLOCK_K2), start=SPLIT_OFF
+            )
+        ]
+
+        # B is the head index and is distributed across workgroups and waves
+        constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1)]
+        constraints += [tkw.WaveConstraint(B, BLOCK_B / B_WAVES)]
+
+        constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 3)]
+
+        vector_shapes = {S: 0, U: 1}
+        # vector_shapes = {S: 0, U: 1, B: 8, K1: K1, K2: BLOCK_K2, N: 8}
+        waves_per_block = (1, B_WAVES, 1)
+        constraints += [
+            tkw.HardwareConstraint(
+                threads_per_wave=THREADS_PER_WAVE,
+                waves_per_block=waves_per_block,
+                mma_type=mfma_variant[1],
+                vector_shapes=vector_shapes,
+            )
+        ]
+        return constraints
+
     def phase_1_constraints() -> list[tkw.Constraint]:
         constraints: list[tkw.Constraint] = [tkw.WorkgroupConstraint(B, BLOCK_B, 0)]
         constraints += [tkw.WaveConstraint(B, BLOCK_B)]
@@ -143,7 +179,10 @@ def get_paged_decode_attention_kernels(
 
     def get_constraints(phase: Phase) -> list[tkw.Constraint]:
         if phase == Phase.PHASE_0:
-            return phase_0_constraints()
+            if mha:
+                return phase_0_constraints_mha()
+            else:
+                return phase_0_constraints()
         else:
             return phase_1_constraints()
 
@@ -249,7 +288,7 @@ def get_paged_decode_attention_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, N, B, tkl.f32],
         ):
-            q_reg = tkw.read(q)
+            q_reg = tkw.read(q)  # [S, B, K1]
             block_indices_v = tkw.read(
                 block_table,
                 mapping=block_table_mapping,
@@ -264,7 +303,7 @@ def get_paged_decode_attention_kernels(
                 k,
                 mapping=k_mapping,
                 mapping_dynamic_vals=(block_indices_k,),
-            )
+            )  # [S, BH, K2, K1]
             imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
@@ -285,7 +324,7 @@ def get_paged_decode_attention_kernels(
                 mapping=v_mapping,
                 mapping_dynamic_vals=(block_indices_v,),
             )
-            new_acc = acc * e_delta_max
+            new_acc = acc * e_delta_max  # [S, N, B]
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
 
@@ -343,22 +382,38 @@ def get_paged_decode_attention_kernels(
             elements_per_thread=PHASE_1_ELEMS_PER_THREAD,
         )
 
-    symbols_0 = {
-        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        BLOCK_BH: 1,
-        BLOCK_B: HEAD_BLOCK_SIZE,
-        BLOCK_S: 1,
-        BLOCK_U: 1,
-        BLOCK_K2: 16,
-        B: shape.num_query_heads,
-        M: 1,
-        N: shape.head_size_kv,
-        K1: shape.head_size,
-        K2: shape.kv_lens,
-        BH: shape.num_kv_heads,
-        S: shape.num_seqs,
-        U: num_kv_splits,
-    }
+    if mha:
+        symbols_0 = {
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            BLOCK_B: 1,
+            BLOCK_S: 1,
+            BLOCK_U: 1,
+            BLOCK_K2: 64,
+            B: shape.num_query_heads,
+            M: 1,
+            N: shape.head_size_kv,
+            K1: shape.head_size,
+            K2: shape.kv_lens,
+            S: shape.num_seqs,
+            U: num_kv_splits,
+        }
+    else:
+        symbols_0 = {
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            BLOCK_BH: 1,
+            BLOCK_B: HEAD_BLOCK_SIZE,
+            BLOCK_S: 1,
+            BLOCK_U: 1,
+            BLOCK_K2: 16,
+            B: shape.num_query_heads,
+            M: 1,
+            N: shape.head_size_kv,
+            K1: shape.head_size,
+            K2: shape.kv_lens,
+            BH: shape.num_kv_heads,
+            S: shape.num_seqs,
+            U: num_kv_splits,
+        }
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N
@@ -579,7 +634,7 @@ def get_paged_decode_attention_mha_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, N, B, tkl.f32],
         ):
-            q_reg = tkw.read(q)
+            q_reg = tkw.read(q)  # [S, B, K1]
             block_indices_v = tkw.read(
                 block_table,
                 mapping=block_table_mapping,
@@ -594,7 +649,7 @@ def get_paged_decode_attention_mha_kernels(
                 k,
                 mapping=k_mapping,
                 mapping_dynamic_vals=(block_indices_k,),
-            )
+            )  # [S, B, K2, K1]
             # imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
             # inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             # x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
@@ -682,20 +737,36 @@ def get_paged_decode_attention_mha_kernels(
             elements_per_thread=PHASE_1_ELEMS_PER_THREAD,
         )
 
-    symbols_0 = {
-        ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        BLOCK_B: 64,
-        BLOCK_S: 1,
-        BLOCK_U: 1,
-        BLOCK_K2: 64,
-        B: shape.num_query_heads,
-        M: 1,
-        N: shape.head_size_kv,
-        K1: shape.head_size,
-        K2: shape.kv_lens,
-        S: shape.num_seqs,
-        U: num_kv_splits,
-    }
+    if mha:
+        symbols_0 = {
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            BLOCK_B: 64,
+            BLOCK_S: 1,
+            BLOCK_U: 1,
+            BLOCK_K2: 64,
+            B: shape.num_query_heads,
+            M: 1,
+            N: shape.head_size_kv,
+            K1: shape.head_size,
+            K2: shape.kv_lens,
+            S: shape.num_seqs,
+            U: num_kv_splits,
+        }
+    else:
+        symbols_0 = {
+            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            BLOCK_B: 64,
+            BLOCK_S: 1,
+            BLOCK_U: 1,
+            BLOCK_K2: 64,
+            B: shape.num_query_heads,
+            M: 1,
+            N: shape.head_size_kv,
+            K1: shape.head_size,
+            K2: shape.kv_lens,
+            S: shape.num_seqs,
+            U: num_kv_splits,
+        }
     symbols_1 = dict(symbols_0)
     symbols_1[BLOCK_B] = PHASE_1_BLOCK_B
     symbols_1[BLOCK_N] = PHASE_1_BLOCK_N

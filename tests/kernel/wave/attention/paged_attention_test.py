@@ -22,10 +22,9 @@ from iree.turbine.kernel.wave.utils.torch_utils import (
     device_zeros,
 )
 from iree.turbine.kernel.wave.compile import WaveCompileOptions, wave_compile
-from iree.turbine.kernel.wave.constraints import MMAType
+from iree.turbine.kernel.wave.constraints import MMAType, GenericDot, MMAOperand
 from iree.turbine.kernel.wave.templates.paged_decode_attention import (
     get_paged_decode_attention_kernels,
-    get_paged_decode_attention_mha_kernels,
     paged_decode_attention_shape,
 )
 from iree.turbine.kernel.wave.scheduling.schedule import SchedulingType
@@ -355,6 +354,11 @@ def testPagedFlashDecoding(
     assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3)
 
 
+_mha_intr = GenericDot(along_dim=MMAOperand.M)
+# _mha_intr = GenericDot()
+# _mha_intr = MMAType.F32_16x16x16_F16
+
+
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", mha_shapes)
@@ -364,7 +368,7 @@ def testPagedFlashDecoding(
 @pytest.mark.parametrize(
     "mfma_variant",
     [
-        (MMAType.F32_16x16x16_F16, MMAType.F32_16x16x16_F16),
+        (_mha_intr, _mha_intr),
     ],
 )
 def testPagedFlashDecodingMHA(
@@ -434,13 +438,14 @@ def testPagedFlashDecodingMHA(
         phase_1,
         hyperparams_0,
         hyperparams_1,
-    ) = get_paged_decode_attention_mha_kernels(
+    ) = get_paged_decode_attention_kernels(
         shape,
         mfma_variant,
         num_kv_splits,
         key_cache_4d.shape,
         value_cache_4d.shape,
         block_table.shape,
+        mha=True,
     )
     hyperparams_0.update(get_default_scheduling_params())
     hyperparams_1.update(get_default_scheduling_params())

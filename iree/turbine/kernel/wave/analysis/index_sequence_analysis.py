@@ -322,7 +322,7 @@ def populate_mma_source_indices(
     return [lhs_tuple, rhs_tuple, acc_tuple, mma_tuple]
 
 
-def collect_parent_redutions(root: CustomOp) -> list[Reduction]:
+def collect_parent_redutions(root: CustomOp) -> list[Iterate]:
     """
     Collect all the parent reductions of the given node, starting from the most nested one.
     """
@@ -333,7 +333,7 @@ def collect_parent_redutions(root: CustomOp) -> list[Reduction]:
             break
 
         parent = get_custom(parent)
-        if isinstance(parent, Reduction):
+        if isinstance(parent, Iterate):
             ret.append(parent)
 
         root = parent
