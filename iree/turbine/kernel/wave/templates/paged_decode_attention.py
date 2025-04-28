@@ -138,7 +138,7 @@ def get_paged_decode_attention_kernels(
         constraints += [tkw.WorkgroupConstraint(B, BLOCK_B, 1)]
         constraints += [tkw.WaveConstraint(B, BLOCK_B / B_WAVES)]
 
-        constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 3)]
+        constraints += [tkw.WorkgroupConstraint(S, BLOCK_S, 0)]
 
         vector_shapes = {S: 0, U: 1}
         # vector_shapes = {S: 0, U: 1, B: 8, K1: K1, K2: BLOCK_K2, N: 8}
@@ -288,7 +288,7 @@ def get_paged_decode_attention_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, N, B, tkl.f32],
         ):
-            q_reg = tkw.read(q)  # [S, B, K1]
+            q_reg = tkw.read(q)  # [S, B, K1] NxK
             block_indices_v = tkw.read(
                 block_table,
                 mapping=block_table_mapping,
@@ -303,7 +303,7 @@ def get_paged_decode_attention_kernels(
                 k,
                 mapping=k_mapping,
                 mapping_dynamic_vals=(block_indices_k,),
-            )  # [S, BH, K2, K1]
+            )  # [S, BH, K2, K1] MxK
             imm_reg = tkl.Register[S, K2, B, tkl.f32](0.0)
             inner_acc = tkw.mma(k_reg, q_reg, imm_reg, mfma_variant[0])
             x_j = tkw.permute(inner_acc, target_shape=[S, B, K2])
@@ -318,12 +318,12 @@ def get_paged_decode_attention_kernels(
             e_delta = tkw.exp2(x_j - m_j)
             e_init = partial_sum * e_delta_max
             d_j = tkw.sum(e_delta, e_init, dim=K2)
-            imm_f16 = tkw.cast(e_delta, tkl.f16)
+            imm_f16 = tkw.cast(e_delta, tkl.f16)  # [S, B, K2] NxK
             v_reg = tkw.read(
                 v,
                 mapping=v_mapping,
                 mapping_dynamic_vals=(block_indices_v,),
-            )
+            )  # [S, BH, N, K2] MxK
             new_acc = acc * e_delta_max  # [S, N, B]
             acc = tkw.mma(v_reg, imm_f16, new_acc)
             return m_j, d_j, acc
