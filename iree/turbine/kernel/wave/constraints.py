@@ -87,7 +87,6 @@ class GenericDot:
             )
 
     def get_shape(self, threads_per_wave: int) -> tuple[int, int, int]:
-
         m = self.out_vec_size
         n = threads_per_wave // self.k_mult
         k = self.k_vec_size * self.k_mult
