@@ -388,7 +388,7 @@ def get_paged_decode_attention_kernels(
             BLOCK_B: 1,
             BLOCK_S: 1,
             BLOCK_U: 1,
-            BLOCK_K2: 16,
+            BLOCK_K2: 64,
             B: shape.num_query_heads,
             M: 1,
             N: shape.head_size_kv,
