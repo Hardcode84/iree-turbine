@@ -354,11 +354,6 @@ def testPagedFlashDecoding(
     assert_close(output, ref_vllm_output, rtol=1e-3, atol=1e-3)
 
 
-_mha_intr = GenericDot(along_dim=MMAOperand.M, k_vec_size=4, k_mult=16)
-# _mha_intr = GenericDot()
-# _mha_intr = MMAType.F32_16x16x16_F16
-
-
 @require_e2e
 @require_cdna3
 @pytest.mark.parametrize("shape", mha_shapes)
@@ -369,8 +364,8 @@ _mha_intr = GenericDot(along_dim=MMAOperand.M, k_vec_size=4, k_mult=16)
     "mfma_variant",
     [
         (
-            GenericDot(along_dim=MMAOperand.M, k_vec_size=4),
-            GenericDot(along_dim=MMAOperand.M, k_vec_size=1, k_mult=64),
+            GenericDot(along_dim=MMAOperand.M, k_vec_size=16, k_mult=16),
+            GenericDot(along_dim=MMAOperand.M, k_vec_size=1, k_mult=4),
         ),
     ],
 )

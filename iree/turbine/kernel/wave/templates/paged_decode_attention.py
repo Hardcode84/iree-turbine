@@ -384,11 +384,11 @@ def get_paged_decode_attention_kernels(
 
     if mha:
         symbols_0 = {
-            ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
+            ADDRESS_SPACE: GLOBAL_ADDRESS_SPACE,
             BLOCK_B: 1,
             BLOCK_S: 1,
             BLOCK_U: 1,
-            BLOCK_K2: 64,
+            BLOCK_K2: 16,
             B: shape.num_query_heads,
             M: 1,
             N: shape.head_size_kv,
