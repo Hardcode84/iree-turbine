@@ -11,26 +11,25 @@ from ...ops.wave_ops import (
     CustomOp,
     GetResult,
     IterArg,
+    Iterate,
     MMA,
     NestedRegionOp,
     Output,
     Placeholder,
     Read,
     ReduceOp,
-    Iterate,
     Write,
     get_custom,
 )
 from ..constraints import (
     Constraint,
     HardwareConstraint,
-    ThreadConstraint,
     TilingConstraint,
     WorkgroupConstraint,
 )
 from ..assumptions import Assumption
 from ..symbolic_constraints import SymbolicAlias
-from ..._support.tracing import CapturedTrace, IndexingContext
+from ..._support.tracing import CapturedTrace
 from ..._support.indexing import IndexSymbol, IndexSequence
 from ...lang.global_symbols import *
 from ..utils.general_utils import (

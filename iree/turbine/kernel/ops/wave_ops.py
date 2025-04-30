@@ -638,6 +638,11 @@ class CustomOp(ABC):
             return self.fx_node.index
         return None
 
+    def operand_index(self, operand: int) -> Optional[dict[IndexSymbol, IndexSequence]]:
+        args = self.fx_node.args
+        assert operand >= 0 and operand < len(args), f"Invalid operand index: {operand}"
+        return get_custom(args[operand]).index
+
     @index.setter
     def index(self, value: Any):
         """
@@ -1223,7 +1228,7 @@ class MMA(CustomOp):
     def infer_type(self):
         self.type = self.acc_type
 
-    def operand_index(
+    def _operand_index(
         self, operand_map: dict[IndexSymbol, int], shape: list[IndexExpr]
     ) -> dict[IndexSymbol, IndexSequence]:
         indices: dict[IndexSymbol, IndexSequence] = {}
@@ -1234,19 +1239,30 @@ class MMA(CustomOp):
     @property
     def lhs_index(self) -> dict[IndexSymbol, IndexSequence]:
         operand_map = {MMA_LHS: 1, MMA_RHS: 0, MMA_ACC: 0}
-        return self.operand_index(operand_map, self.lhs_type.symbolic_shape)
+        return self._operand_index(operand_map, self.lhs_type.symbolic_shape)
 
     @property
     def rhs_index(self) -> dict[IndexSymbol, IndexSequence]:
         operand_map = {MMA_LHS: 0, MMA_RHS: 1, MMA_ACC: 0}
-        return self.operand_index(operand_map, self.rhs_type.symbolic_shape)
+        return self._operand_index(operand_map, self.rhs_type.symbolic_shape)
 
     @property
     def acc_index(self) -> dict[IndexSymbol, IndexSequence]:
         operand_map = {MMA_LHS: 0, MMA_RHS: 0, MMA_ACC: 1}
         if self.acc_type is None:
             return None
-        return self.operand_index(operand_map, self.acc_type.symbolic_shape)
+        return self._operand_index(operand_map, self.acc_type.symbolic_shape)
+
+    def operand_index(self, operand: int) -> Optional[dict[IndexSymbol, IndexSequence]]:
+        match operand:
+            case 0:
+                return self.lhs_index
+            case 1:
+                return self.rhs_index
+            case 2:
+                return self.acc_index
+            case _:
+                raise ValueError(f"Invalid operand index: {operand}")
 
     def custom_string(self, value_map: dict[str, str]) -> str:
         if self.index is None:
@@ -2060,8 +2076,8 @@ class ShuffleOp(CustomOp):
     """
 
     arg: fx.Node
-    offset: int
-    width: int
+    offset: IndexExpr | int
+    width: IndexExpr | int
     mode: "ShuffleMode"
 
     @property

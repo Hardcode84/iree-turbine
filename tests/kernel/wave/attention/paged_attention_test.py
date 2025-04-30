@@ -364,8 +364,8 @@ def testPagedFlashDecoding(
     "mfma_variant",
     [
         (
+            GenericDot(along_dim=MMAOperand.M, k_vec_size=16, k_mult=1),
             GenericDot(along_dim=MMAOperand.M, k_vec_size=4, k_mult=16),
-            GenericDot(along_dim=MMAOperand.M, k_vec_size=1, k_mult=4),
         ),
     ],
 )

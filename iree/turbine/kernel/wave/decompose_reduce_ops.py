@@ -7,7 +7,6 @@
 from ..wave.constraints import (
     Constraint,
     HardwareConstraint,
-    WorkgroupConstraint,
     TilingConstraint,
 )
 from .._support.tracing import CapturedTrace
