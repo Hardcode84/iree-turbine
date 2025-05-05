@@ -227,6 +227,18 @@ def get_paged_decode_attention_kernels(
         outputs={K2: i},
     )
 
+    out_write_mapping = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={U: i, S: j, N: k, B: l},
+        outputs={U: i, S: j, N: k, B: l},
+    )
+
+    out_read_mapping = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={U: i, S: j, N: k, B: l},
+        outputs={U: i, S: j, N: k, B: l},
+    )
+
     k_layout = tkl.MemoryLayout(shape=k_shape)
     v_layout = tkl.MemoryLayout(shape=v_shape)
     req_indices_layout = tkl.MemoryLayout(shape=[S + 1])
@@ -242,7 +254,7 @@ def get_paged_decode_attention_kernels(
             S, GLOBAL_ADDRESS_SPACE, tkl.i32, req_indices_layout
         ],
         kv_indices: tkl.Memory[K2, GLOBAL_ADDRESS_SPACE, tkl.i32, kv_indices_layout],
-        output: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        output: tkl.Memory[U, S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
     ):
         # =========================================================================
@@ -334,18 +346,19 @@ def get_paged_decode_attention_kernels(
 
         res_max, res_sum, res_mm = loop
 
-        @tkw.conditional(SPLIT_LEN > 0)
+        @tkw.conditional(SPLIT_LEN >= 0)
         def then():
             reciprocal_sum = tkw.reciprocal(res_sum)
             res = res_mm * reciprocal_sum
             res_max_log_sum = res_max + tkw.log2(res_sum)
 
             tkw.write(res_max_log_sum, output_max)
-            tkw.write(res, output)
+            tkw.write(res, output, mapping=out_write_mapping)
+            # tkw.write(res, output)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(
-        logits: tkl.Memory[U, S, N, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
+        logits: tkl.Memory[U, S, B, N, GLOBAL_ADDRESS_SPACE, tkl.f32],
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         request_indices: tkl.Memory[
             S, GLOBAL_ADDRESS_SPACE, tkl.i32, req_indices_layout
@@ -370,7 +383,11 @@ def get_paged_decode_attention_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, B, N, tkl.f32],
         ):
-            x_j = tkw.read(logits, elements_per_thread=PHASE_1_ELEMS_PER_THREAD)
+            x_j = tkw.read(
+                logits,
+                elements_per_thread=PHASE_1_ELEMS_PER_THREAD,
+                mapping=out_read_mapping,
+            )
             xm_j = tkw.read(logits_max, elements_per_thread=PHASE_1_ELEMS_PER_THREAD)
             m_j = tkw.maximum(xm_j, partial_max)
             old_scale = tkw.exp2(partial_max - m_j)
