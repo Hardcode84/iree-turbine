@@ -569,6 +569,9 @@ class TilingConstraint(DistributionConstraint):
 
     @property
     def work_bound(self) -> IndexExpr:
+        if self.iters:
+            return self.start + self.iters * self.tile_size
+
         return self.start + self.count * self.tile_size
 
 
