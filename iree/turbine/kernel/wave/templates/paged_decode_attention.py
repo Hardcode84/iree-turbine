@@ -85,7 +85,7 @@ def get_paged_decode_attention_kernels(
         B_WAVES = 1
     else:
         B_WAVES = max(min(4, head_ratio // B_SIZE), 1)
-    HEAD_BLOCK_SIZE = B_SIZE * B_WAVES
+    HEAD_BLOCK_SIZE = min(B_SIZE * B_WAVES, head_ratio)
 
     LOG2E = 1.44269504089
     dk_sqrt = math.sqrt(1.0 / shape.head_size)
