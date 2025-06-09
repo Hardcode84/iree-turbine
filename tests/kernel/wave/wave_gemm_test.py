@@ -216,6 +216,7 @@ def testPureGemm(
 
 @require_e2e
 @pytest.mark.parametrize("shape", [(32, 32, 32)] + get_test_shapes("test_gemm"))
+@pytest.mark.parametrize("tile_size", [(8, 8, 8), (7, 5, 13)])
 @pytest.mark.parametrize(
     "enable_scheduling",
     [
@@ -232,6 +233,7 @@ def testPureGemm(
 )
 def testGemmSmallTiles(
     shape: tuple[int],
+    tile_size: tuple[int],
     enable_scheduling: SchedulingType,
     dynamic_dims: bool,
     mfma_variant: MMAType,
@@ -300,9 +302,9 @@ def testGemmSmallTiles(
 
     hyperparams = {
         ADDRESS_SPACE: SHARED_ADDRESS_SPACE,
-        BLOCK_M: 8,
-        BLOCK_N: 8,
-        BLOCK_K: 8,
+        BLOCK_M: tile_size[0],
+        BLOCK_N: tile_size[1],
+        BLOCK_K: tile_size[2],
         M: shape[0],
         N: shape[1],
         K: shape[2],
