@@ -299,6 +299,8 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
 
         other_users = find_other_users(read)
 
+        read_index_saved = None
+
         # Construct new reads.
         for i in range(load_elems_per_thread):
             read_index = get_tiled_index(
@@ -319,6 +321,9 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
                 src_symbolic_shape[-1],
                 expected_number_of_loads,
             )
+            if i == 0:
+                read_index_saved = read_index
+
             logger.info(f"read_index={read_index}")
             mapping = read.mapping
             if mapping is not None:
@@ -421,11 +426,47 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
                 f"found other user, src_symbolic_shape={src_symbolic_shape}, other_symbolic_shape={other_symbolic_shape}"
             )
             shape_mapping = make_shape_mapping(
-                src_symbolic_shape,
                 other_symbolic_shape,
-                src_materialized_shape,
+                src_symbolic_shape,
                 other_materialized_shape,
+                src_materialized_shape,
             )
             logger.info(f"shape_mapping={shape_mapping}")
+            new_base_index = {
+                k.subs(shape_mapping): v for k, v in read_index_saved.items()
+            }
+            logger.info(f"new_base_index={new_base_index}")
+            other_read = get_custom(other_read)
+            other_write = get_custom(other_write)
+            with other_read.graph.inserting_before(other_read.fx_node):
+                for i in range(load_elems_per_thread):
+                    new_index = copy.copy(new_base_index)
+                    new_index[other_symbolic_shape[-2]].start = (
+                        new_index[other_symbolic_shape[-2]].start + i
+                    )
+                    logger.info(f"new_index={new_index}")
+                    new_read = Read(
+                        other_read.memory,
+                        expected_number_of_loads,
+                        mapping=other_read.mapping,
+                        mapping_dynamic_vals=other_read.mapping_dynamic_vals,
+                    ).add_to_graph(other_read.graph)
+                    new_read.index = new_index
+                    new_read.vector_shapes = other_read.vector_shapes
+                    new_read_custom = get_custom(new_read)
+                    new_read_custom.infer_type()
+                    update_read_mapping_dynamic_values(new_read_custom)
+                    new_write = Write(
+                        new_read,
+                        other_write.memory,
+                        expected_number_of_loads,
+                        mapping=other_write.mapping,
+                        mapping_dynamic_vals=other_write.mapping_dynamic_vals,
+                    ).add_to_graph(other_write.graph)
+                    new_write.index = new_index
+                    new_write.vector_shapes = other_write.vector_shapes
+                    new_writes[other_write.memory].append(new_write)
 
+        logger.info(f"new_writes={new_writes}")
         update_write_dependencies(new_writes, trace)
+        logger.info("done")
