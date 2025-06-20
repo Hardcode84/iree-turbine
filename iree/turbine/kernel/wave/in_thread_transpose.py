@@ -275,6 +275,13 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
         if expected_number_of_loads <= 1:
             continue
 
+        if expected_number_of_loads > load_elems_per_thread:
+            logger.info(f"expected_number_of_loads > load_elems_per_thread, skipping")
+            expected_number_of_loads, load_elems_per_thread = (
+                load_elems_per_thread,
+                expected_number_of_loads,
+            )
+
         if materialized_shape[-2] % expected_number_of_loads != 0:
             continue
 
