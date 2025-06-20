@@ -32,7 +32,8 @@ from .minimize_global_loads import (
     update_write_dependencies,
 )
 from .global_to_shared_gathers import update_read_mapping_dynamic_values
-from ..ops.wave_ops import Extract, Read, Write, Reshape
+from ..ops.wave_ops import Extract, Read, Write, Reshape, CustomOp
+from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,84 @@ def get_tiled_index(
     return index
 
 
+def get_single_user(node: fx.Node, custom_type: type) -> Optional[CustomOp]:
+    """
+    Check if the node has exactly one user of type `custom_type`.
+    If so, return it.
+    Otherwise, return None.
+    """
+    if len(node.users) != 1:
+        return None
+
+    custom_user = get_custom(next(iter(node.users)))
+    if not isinstance(custom_user, custom_type):
+        return None
+
+    return custom_user.fx_node
+
+
+def find_other_users(node: Read) -> list[list[tuple[fx.Node, fx.Node]]]:
+    id_to_read_write = defaultdict(list)
+    for dyn_val in node.mapping_dynamic_vals:
+        if not isinstance(get_custom(dyn_val), Read):
+            continue
+
+        # dyn_val_index = dyn_val.index
+        # logger.info(f"dyn_val_index={dyn_val_index}")
+
+        for other_dyn_read in get_custom(dyn_val).memory.users:
+            if other_dyn_read.pre_expansion_id == dyn_val.pre_expansion_id:
+                continue
+            if not isinstance(get_custom(other_dyn_read), Read):
+                continue
+
+            for other_read in other_dyn_read.users:
+                if not isinstance(get_custom(other_read), Read):
+                    continue
+
+                other_write = get_single_user(other_read, Write)
+                if (
+                    other_write is None
+                    or not get_custom(other_write).has_identity_mapping()
+                ):
+                    continue
+
+                if other_read.index != other_write.index:
+                    continue
+
+                id_to_read_write[
+                    (other_read.pre_expansion_id, other_write.pre_expansion_id)
+                ].append((other_read, other_write))
+
+    return list(id_to_read_write.values())
+
+
+def make_shape_mapping(
+    src_shape: Sequence[IndexSymbol],
+    dst_shape: Sequence[IndexSymbol],
+    src_materialized_shape: Sequence[int],
+    dst_materialized_shape: Sequence[int],
+) -> dict[IndexSymbol, IndexSymbol]:
+    mapping = {}
+    for i, dst_dim in enumerate(dst_shape):
+        if dst_dim in src_shape:
+            mapping[dst_dim] = dst_dim
+            continue
+
+        dst_dim_val = dst_materialized_shape[i]
+        assert (
+            dst_dim_val in src_materialized_shape
+        ), f"Incompatible shapes: {src_materialized_shape} and {dst_materialized_shape}"
+        for src_dim, src_dim_val in zip(src_shape, src_materialized_shape):
+            if src_dim in mapping:
+                continue
+            if src_dim_val == dst_dim_val:
+                mapping[dst_dim] = src_dim
+                break
+
+    return mapping
+
+
 def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
     """
     This pass is detecting when read-write pair is doing transpose and tries to
@@ -121,17 +200,17 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
     """
     logger.info("in_thread_transpose")
     candidates = trace.walk(is_transpose_read)
-    for candidate in candidates:
-        logger.info(candidate, candidate.index)
 
-    mem_to_read_write = defaultdict(list)
+    id_to_read_write = defaultdict(list)
     for read in candidates:
         read = get_custom(read)
         for write in read.users:
             if not isinstance(write, Write):
                 continue
 
-            mem_to_read_write[(read.memory, write.memory)].append((read, write))
+            id_to_read_write[(read.pre_expansion_id, write.pre_expansion_id)].append(
+                (read, write)
+            )
 
     constraint_tile_size = {
         c.dim: c.tile_size
@@ -144,17 +223,17 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
         hardware_constraint.waves_per_block
     )
 
-    for reads_writes in mem_to_read_write.values():
+    for reads_writes in id_to_read_write.values():
         read, write = reads_writes[0]
         logger.info(f"processing read={read}, write={write}")
 
-        if read.mapping_dynamic_vals:
-            # TODO: While we do support dynamic val mappings functionally,
-            # changing it access pattern causes perf degradation on paged decode
-            # attention.
-            # Need to modify minimize_global_loads to use access-pattern of
-            # dynamic val mappings.
-            continue
+        # if read.mapping_dynamic_vals:
+        #     # TODO: While we do support dynamic val mappings functionally,
+        #     # changing it access pattern causes perf degradation on paged decode
+        #     # attention.
+        #     # Need to modify minimize_global_loads to use access-pattern of
+        #     # dynamic val mappings.
+        #     continue
 
         element_type = read.type.dtype
 
@@ -199,6 +278,7 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
         if materialized_shape[-2] % expected_number_of_loads != 0:
             continue
 
+        logger.info(f"read.index={read.index}")
         linear_id = hardware_constraint.linearized_thread_id
         global_index = remove_thread_indexing(read.index)
         logger.info(
@@ -207,12 +287,17 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
 
         new_reads = []
 
+        src_materialized_shape = materialize_shape(
+            constraint_tile_size, src_symbolic_shape
+        )
         load_shape = get_tiled_shape(
-            materialize_shape(constraint_tile_size, src_symbolic_shape),
+            src_materialized_shape,
             expected_number_of_loads,
             load_elems_per_thread,
         )
         logger.info(f"load_shape={load_shape}")
+
+        other_users = find_other_users(read)
 
         # Construct new reads.
         for i in range(load_elems_per_thread):
@@ -320,5 +405,27 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
                 new_write.index = store_index
                 new_write.vector_shapes = write.vector_shapes
                 new_writes[write.memory].append(new_write)
+
+        for other_user in other_users:
+            other_read, other_write = other_user[0]
+            other_materialized_shape = materialize_shape(
+                constraint_tile_size, other_read.type.symbolic_shape
+            )
+            logger.info(f"other_materialized_shape={other_materialized_shape}")
+            if set(other_materialized_shape) != set(materialized_shape):
+                logger.info(f"other_materialized_shape != materialized_shape, skipping")
+                continue
+
+            other_symbolic_shape = other_read.type.symbolic_shape
+            logger.info(
+                f"found other user, src_symbolic_shape={src_symbolic_shape}, other_symbolic_shape={other_symbolic_shape}"
+            )
+            shape_mapping = make_shape_mapping(
+                src_symbolic_shape,
+                other_symbolic_shape,
+                src_materialized_shape,
+                other_materialized_shape,
+            )
+            logger.info(f"shape_mapping={shape_mapping}")
 
         update_write_dependencies(new_writes, trace)
