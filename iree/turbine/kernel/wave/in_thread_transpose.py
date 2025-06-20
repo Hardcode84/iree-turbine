@@ -435,12 +435,13 @@ def in_thread_transpose(trace: CapturedTrace, constraints: list[Constraint]):
             new_base_index = {
                 k.subs(shape_mapping): v for k, v in read_index_saved.items()
             }
+            logger.info(f"old_index={other_read.index}")
             logger.info(f"new_base_index={new_base_index}")
             other_read = get_custom(other_read)
             other_write = get_custom(other_write)
             with other_read.graph.inserting_before(other_read.fx_node):
                 for i in range(load_elems_per_thread):
-                    new_index = copy.copy(new_base_index)
+                    new_index = copy.deepcopy(new_base_index)
                     new_index[other_symbolic_shape[-2]].start = (
                         new_index[other_symbolic_shape[-2]].start + i
                     )
