@@ -51,12 +51,12 @@ class WaveKernel:
         self.symbols_args_map = symbols_args_map
 
         if options.profile_python_wrapper:
-            self.__call__ = self.invoke_with_profile
+            self.call_handler = self.invoke_with_profile
         else:
-            self.__call__ = self.invoke
+            self.call_handler = self.invoke
 
     def __call__(self, *args, **kwargs):
-        raise NotImplementedError("Call handler was not set")
+        return self.call_handler(*args, **kwargs)
 
     def invoke(self, *args, **kwargs):
         """
@@ -103,6 +103,7 @@ class WaveKernel:
     def invoke_with_profile(self, *args, **kwargs):
         with cProfile.Profile() as pr:
             self.invoke(*args, **kwargs)
+
         return pr
 
 
