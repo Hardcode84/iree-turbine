@@ -102,9 +102,10 @@ class WaveKernel:
 
     def invoke_with_profile(self, *args, **kwargs):
         with cProfile.Profile() as pr:
-            self.invoke(*args, **kwargs)
+            res = self.invoke(*args, **kwargs)
 
-        return pr
+        pr.print_stats(sort="cumulative")
+        return res
 
 
 def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveKernel:
