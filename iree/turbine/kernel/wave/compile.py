@@ -2,6 +2,7 @@ from typing import Any, Optional
 
 import torch
 import glob
+import cProfile
 from copy import copy
 from .._support.indexing import IndexingContext
 from .._support.location_config import LocationCaptureLevel
@@ -49,8 +50,13 @@ class WaveKernel:
         self.bound_scalar_symbols = bound_scalar_symbols
         self.symbols_args_map = symbols_args_map
 
+        if options.profile_python_wrapper:
+            self.__call__ = self.invoke_with_profile
+        else:
+            self.__call__ = self.invoke
+
     def __call__(self, *args, **kwargs):
-        return self.invoke(*args, **kwargs)
+        raise NotImplementedError("Call handler was not set")
 
     def invoke(self, *args, **kwargs):
         """
@@ -93,6 +99,11 @@ class WaveKernel:
             self.gpu_func,
         )
         return self.asm
+
+    def invoke_with_profile(self, *args, **kwargs):
+        with cProfile.Profile() as pr:
+            self.invoke(*args, **kwargs)
+        return pr
 
 
 def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveKernel:

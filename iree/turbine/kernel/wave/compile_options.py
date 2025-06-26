@@ -67,6 +67,7 @@ class WaveCompileOptions:
     use_buffer_store_ops: bool = False
     use_stride_cache_swizzle: bool = False
     use_fast_math: bool = False
+    profile_python_wrapper: bool = False
 
     # === Compiler options ===
     minimize_shared_allocs: bool = True
