@@ -384,6 +384,7 @@ def get_paged_decode_attention_kernels(
             res_max_log_sum = res_max + tkw.log2(res_sum)
 
             tkw.write(res_max_log_sum, output_max)
+            res = tkw.broadcast(res, target_shape=[U, S, N, B])
             tkw.write(res, output, mapping=logits_out_mapping)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
