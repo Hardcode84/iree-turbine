@@ -260,6 +260,18 @@ def get_paged_decode_attention_kernels(
         dynamic_val_mappings={K2: l},
     )
 
+    logits_out_mapping = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={U: i, S: j, N: k, B: l},
+        outputs={U: i, S: j, N: k, B: l},
+    )
+
+    logits_in_mapping = tkw.IndexMapping(
+        num_iterators=4,
+        inputs={U: i, S: j, N: k, B: l},
+        outputs={U: i, S: j, N: k, B: l},
+    )
+
     # The kv-cache layout here is (SEQ, HEADS, HEAD_DIM).
     @tkw.wave(get_constraints(Phase.PHASE_0))
     def phase_0(
@@ -372,7 +384,7 @@ def get_paged_decode_attention_kernels(
             res_max_log_sum = res_max + tkw.log2(res_sum)
 
             tkw.write(res_max_log_sum, output_max)
-            tkw.write(res, output)
+            tkw.write(res, output, mapping=logits_out_mapping)
 
     @tkw.wave(get_constraints(Phase.PHASE_1))
     def phase_1(
@@ -397,7 +409,7 @@ def get_paged_decode_attention_kernels(
             partial_sum: tkl.Register[S, B, tkl.f32],
             acc: tkl.Register[S, B, N, tkl.f32],
         ):
-            x_j = tkw.read(logits)
+            x_j = tkw.read(logits, mapping=logits_in_mapping)
             xm_j = tkw.read(logits_max)
             m_j = tkw.maximum(xm_j, partial_max)
             old_scale = tkw.exp2(partial_max - m_j)
