@@ -32,6 +32,7 @@ from .._support.location_config import LocationCaptureConfig
 from .kernel_codegen import BindingDesc
 
 from typing import Optional
+import sympy
 
 
 def memref_to_tensor(memrefs: list[IrType]):
@@ -54,8 +55,16 @@ def get_dynamic_dims(bindings: list[BindingDesc], dynamic_symbols: list[IndexSym
     for b in bindings:
         node_type = b.reference[1].type
         if node_type.physical_layout:
-            if all(node_type.physical_layout.shape):
+            physical_shape = node_type.physical_layout.shape
+
+            def is_static_dim(dim):
+                return dim is not None and all(
+                    s not in dynamic_symbols for s in sympy.sympify(dim).free_symbols
+                )
+
+            if all(is_static_dim(dim) for dim in physical_shape):
                 continue
+
         for dim in b.kernel_buffer_type.symbolic_shape:
             if dim in dynamic_symbols:
                 dynamic_dims.append(dim)

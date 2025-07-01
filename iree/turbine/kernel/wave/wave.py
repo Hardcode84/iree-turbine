@@ -167,6 +167,28 @@ def _is_memory_arg(a: Any) -> bool:
     return inspect.isclass(a) and issubclass(a, Memory)
 
 
+def _get_dim_func(layout_dim: Any, symbol: IndexExpr) -> Callable[[int], int]:
+    """
+    Returns a function that takes a dimension and returns the value
+    that should be used for the dynamic symbol.
+
+    If the layout dimension is not a symbolic expression, then the function
+    returns the dimension as is.
+
+    Example:
+    For the layout `tkl.Memory[S, ADDRESS_SPACE, tkl.i32, tkl.MemoryLayout(shape=[S + 1])]`
+    and the symbol `S`, the function will return `lambda dim: dim - 1` as memory physical layout
+    is iteration symbol + 1.
+    """
+    if layout_dim is not sympy.Basic:
+        return lambda dim: dim
+
+    ARG = index_symbol("$ARG")
+    s = sympy.solve(layout_dim - ARG, symbol)
+    assert len(s) == 1, f"Expected 1 solution for {layout_dim} and {symbol}, got {s}"
+    return sympy.lambdify([ARG], s[0])
+
+
 class LaunchableWave(Launchable):
     def __init__(
         self,
@@ -201,11 +223,18 @@ class LaunchableWave(Launchable):
             if not _is_memory_arg(arg):
                 continue
 
+            physical_layout = arg.physical_layout
+
             for j, symbol in enumerate(arg.symbolic_shape):
                 if symbol in symbols_args_map:
                     continue
 
-                symbols_args_map[symbol] = (i, j)
+                dim_func = lambda dim: dim
+                if physical_layout is not None:
+                    layout_dim = physical_layout.shape[j]
+                    dim_func = _get_dim_func(layout_dim, symbol)
+
+                symbols_args_map[symbol] = (i, j, dim_func)
         self.symbols_args_map = symbols_args_map
 
     @property

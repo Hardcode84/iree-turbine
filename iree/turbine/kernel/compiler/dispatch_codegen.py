@@ -6,6 +6,7 @@ embedding and generating the calls/dispatches.
 """
 
 from typing import Any, Callable, Optional
+import sympy
 
 from .._support.indexing import IndexSymbol, IndexExpr
 
@@ -307,11 +308,15 @@ class DispatchEntrypoint(BoundKernelSignature):
         node_type = binding.reference[1].type
         if node_type.physical_layout:
             physical_shape = node_type.physical_layout.shape
-            if all(physical_shape):
+
+            def is_static_dim(dim: int | IndexExpr) -> bool:
+                return dim is not None and all(
+                    s not in self.dynamic_symbols_mapping
+                    for s in sympy.sympify(dim).free_symbols
+                )
+
+            if all(is_static_dim(dim) for dim in physical_shape):
                 return []
-            assert len(dynamic_dims) == physical_shape.count(
-                None
-            ), f"Expected {physical_shape.count(None)} dynamic dims, got {len(dynamic_dims)} for {node_type}"
         return dynamic_dims
 
     def resolve(self, binding: BindingDesc) -> Value:
