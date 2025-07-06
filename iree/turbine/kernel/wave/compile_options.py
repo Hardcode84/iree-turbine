@@ -66,6 +66,7 @@ class WaveCompileOptions:
     use_buffer_load_ops: bool = False
     use_buffer_store_ops: bool = False
     use_fast_math: bool = False
+    use_slp_vectorizer: bool = False
 
     # === Compiler options ===
     minimize_shared_allocs: bool = True
