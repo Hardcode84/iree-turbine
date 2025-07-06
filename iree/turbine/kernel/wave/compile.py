@@ -8,17 +8,18 @@ from .._support.location_config import LocationCaptureLevel
 from ..compiler import kernel_codegen, host_codegen
 from .compile_options import WaveCompileOptions
 from .water import water_leak_in_bounds_check
-
+from ..compiler.ir import Operation
 from .cache import (
     get_cache_base_dir,
     get_cache_manager,
     get_temp_binary_dir,
     is_cache_enabled,
 )
-from .utils.compile_utils import compile_to_vmfb
+from .utils.compile_utils import canonicalize_module, compile_to_vmfb
 from .utils.run_utils import invoke_vmfb, _write_file
 from iree.turbine.kernel._support.context import push, pop
 from iree.turbine.kernel.lang import IndexSymbol
+from .water import slp_vectorize
 
 
 class WaveKernel:
@@ -171,7 +172,13 @@ def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveK
         options.dynamic_symbols,
         location_capture_config=options.location_capture_config,
     )
-    asm = mb.module_op.get_asm(
+    module = mb.module_op
+
+    if options.use_slp_vectorizer:
+        module = slp_vectorize(module, 128)
+        canonicalize_module(module)
+
+    asm = module.get_asm(
         enable_debug_info=options.location_capture_config.level
         != LocationCaptureLevel.NONE,
         use_local_scope=options.use_local_scope,

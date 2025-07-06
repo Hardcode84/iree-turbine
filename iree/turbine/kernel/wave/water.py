@@ -167,14 +167,19 @@ def _deiree(module: Module) -> str:
     return local_module.get_asm(binary=False, print_generic_op_form=True)
 
 
-def water_leak_in_bounds_check(module: Module):
+def get_binary_path(name: str) -> str:
     try:
         from water_mlir import binaries as water_bin
     except ImportError as err:
         raise RuntimeError(
             "optional water_mlir module not installed but its use is requested"
         ) from err
-    binary = water_bin.find_binary("water-opt")
+
+    return water_bin.find_binary(name)
+
+
+def water_leak_in_bounds_check(module: Module):
+    binary = get_binary_path("water-opt")
     generic_mlir = _deiree(module)
     pipeline = [
         (
@@ -231,3 +236,21 @@ def water_leak_in_bounds_check(module: Module):
         )
     else:
         print("[info] No out-of-bounds accesses detected.")
+
+
+def slp_vectorize(module: Operation, bitwidth: int) -> Operation:
+    """Vectorize the module using the MLIR SLP vectorizer."""
+    asm = module.get_asm(
+        enable_debug_info=True,
+        print_generic_op_form=True,
+    )
+    binary = get_binary_path("water-opt")
+    cmd = [
+        binary,
+        "--allow-unregistered-dialect",
+        f"--pass-pipeline=any(water-greedy-slp-vectorizer{{max-vector-bitwidth={bitwidth}}})",
+        "--mlir-print-op-generic",
+    ]
+    result = subprocess.check_output(cmd, input=asm, text=True)
+    with module.context:
+        return Operation.parse(result)
