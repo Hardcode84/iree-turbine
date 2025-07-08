@@ -14,6 +14,8 @@ from ..profiling import benchmark_module
 from itertools import chain
 from warnings import warn
 from iree.turbine.kernel.lang import IndexSymbol
+from functools import lru_cache
+from typing import Dict, Any
 
 # Cache for the system context and vm function.
 RUNTIME_CACHE: dict[str, tuple[rt.SystemContext, rt.VmFunction]] = {}
@@ -95,11 +97,21 @@ def _print_bench_result(result, filename):
         print(res)
 
 
+@lru_cache(maxsize=None)
+def _get_uuid_to_info_mapping(driver) -> Dict[str, Dict[str, Any]]:
+    available_infos = driver.query_available_devices()
+    return {info["path"].removeprefix("GPU-"): info for info in available_infos}
+
+
 def _create_hal_device(device_id: str):
     driver = rt.get_driver("hip")
+    info_mapping = _get_uuid_to_info_mapping(driver)
+    device_info = info_mapping.get(device_id)
+    if device_info is None:
+        raise ValueError(f"Device {device_id} not found")
     stream = torch.cuda.current_stream().cuda_stream
     device_params = {"hip_external_stream": str(stream)}
-    return driver.create_device(device_id, device_params)
+    return driver.create_device(device_info, device_params)
 
 
 def invoke_vmfb(
