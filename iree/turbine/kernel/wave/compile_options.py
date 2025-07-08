@@ -68,6 +68,8 @@ class WaveCompileOptions:
     use_stride_cache_swizzle: bool = False
     use_fast_math: bool = False
     profile_python_wrapper: bool = False
+    profile_python_warmup: int = 1
+    profile_python_repetitions: int = 1000
 
     # === Compiler options ===
     minimize_shared_allocs: bool = True
