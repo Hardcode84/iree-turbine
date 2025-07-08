@@ -95,6 +95,13 @@ def _print_bench_result(result, filename):
         print(res)
 
 
+def _create_hal_device(device_id: str):
+    driver = rt.get_driver("hip")
+    stream = torch.cuda.current_stream().cuda_stream
+    device_params = {"hip_external_stream": str(stream)}
+    return driver.create_device(device_id, device_params)
+
+
 def invoke_vmfb(
     vmfb: bytes,
     options: WaveCompileOptions,
@@ -135,10 +142,10 @@ def invoke_vmfb(
         for input in kernel_inputs + kernel_outputs
         if isinstance(input, torch.Tensor)
     )
-    device = get_device_uuid(device_list, device)
+    device_uuid = get_device_uuid(device_list, device)
+    device = _create_hal_device(device_uuid)
 
     rt_config = rt.Config(device)
-    device = rt_config.device
     vm_instance = rt_config.vm_instance
 
     if options.kernel_hash and options.kernel_hash in RUNTIME_CACHE:
