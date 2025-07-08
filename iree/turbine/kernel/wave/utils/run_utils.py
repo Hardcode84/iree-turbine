@@ -32,18 +32,13 @@ def _write_file(name, mode, data):
 
 
 @functools.lru_cache
-def get_device_uuid(device_list: list[str], device_str: str) -> tuple[int, str]:
+def get_device_uuid(device: torch.device) -> str:
     """
     Checks all torch.Tensor are on the same device, and get UUID from Torch device.
     """
-    if len(set(device_list)) != 1:
-        raise ValueError(f"Found multiple device on input tensors:{set(device_list)}")
-    device = device_list[0]
     if device.type != "cuda":
         raise ValueError("Expected all argument tensors to be in GPU.")
-    uuid = str(torch.cuda.get_device_properties(device).uuid)
-    device_str = f"{device_str}://GPU-{uuid}"
-    return device_str
+    return str(torch.cuda.get_device_properties(device).uuid)
 
 
 def _inplace_invoke(
@@ -103,12 +98,13 @@ def _get_uuid_to_info_mapping(driver) -> Dict[str, Dict[str, Any]]:
     return {info["path"].removeprefix("GPU-"): info for info in available_infos}
 
 
-def _create_hal_device(device_id: str):
+def _create_hal_device(torch_device: torch.device):
     driver = rt.get_driver("hip")
     info_mapping = _get_uuid_to_info_mapping(driver)
-    device_info = info_mapping.get(device_id)
+    device_uuid = get_device_uuid(torch_device)
+    device_info = info_mapping.get(device_uuid)
     if device_info is None:
-        raise ValueError(f"Device {device_id} not found")
+        raise ValueError(f"Device {device_uuid} not found")
     stream = torch.cuda.current_stream().cuda_stream
     device_params = {"hip_external_stream": str(stream)}
     return driver.create_device(device_info, device_params)
@@ -136,7 +132,6 @@ def invoke_vmfb(
         )
         return
 
-    device = options.device
     if options.run_bench:
         benchmark_flags = {}
         # If we use 1000 for bench_batch_size during compilation, and set this batch size to 1,
@@ -148,21 +143,24 @@ def invoke_vmfb(
                 options.benchmark_repetitions
             )
 
-    # Select device as the GPU, where input tensors are coming from.
-    device_list = tuple(
-        input.device
-        for input in kernel_inputs + kernel_outputs
-        if isinstance(input, torch.Tensor)
-    )
-    device_uuid = get_device_uuid(device_list, device)
-    device = _create_hal_device(device_uuid)
-
-    rt_config = rt.Config(device)
-    vm_instance = rt_config.vm_instance
-
     if options.kernel_hash and options.kernel_hash in RUNTIME_CACHE:
-        ctx, func = RUNTIME_CACHE[options.kernel_hash]
+        ctx, device, func = RUNTIME_CACHE[options.kernel_hash]
     else:
+        # Select device as the GPU, where input tensors are coming from.
+        device_list = tuple(
+            input.device
+            for input in kernel_inputs + kernel_outputs
+            if isinstance(input, torch.Tensor)
+        )
+        if len(set(device_list)) != 1:
+            raise ValueError(
+                f"Found multiple device on input tensors:{set(device_list)}"
+            )
+        device = _create_hal_device(device_list[0])
+
+        rt_config = rt.Config(device=device)
+        vm_instance = rt_config.vm_instance
+
         mod = rt.VmModule.copy_buffer(vm_instance, vmfb)
         vm_modules = [
             mod,
@@ -174,7 +172,7 @@ def invoke_vmfb(
         )
         func = mod.lookup_function(options.func_name)
         if options.kernel_hash:
-            RUNTIME_CACHE[options.kernel_hash] = (ctx, func)
+            RUNTIME_CACHE[options.kernel_hash] = (ctx, device, func)
 
     _inplace_invoke(
         ctx.vm_context,
