@@ -102,7 +102,8 @@ class WaveKernel:
 
     def invoke_with_profile(self, *args, **kwargs):
         with cProfile.Profile() as pr:
-            res = self.invoke(*args, **kwargs)
+            for _ in range(100):
+                res = self.invoke(*args, **kwargs)
 
         pr.print_stats(sort="cumulative")
         return res
