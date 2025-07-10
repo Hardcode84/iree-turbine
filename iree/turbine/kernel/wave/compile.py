@@ -67,7 +67,7 @@ class WaveKernel:
                 entry_point=self.func_name,
             )
 
-        if options.profile_python_wrapper:
+        if False:
             self.call_handler = self.invoke_with_profile
         else:
             self.call_handler = self.invoke
