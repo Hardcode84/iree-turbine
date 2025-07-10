@@ -16,9 +16,12 @@ from .cache import (
     is_cache_enabled,
 )
 from .utils.compile_utils import compile_to_vmfb
-from .utils.run_utils import invoke_vmfb, _write_file, invoke_with_wave_runtime
+from .utils.run_utils import _print_bench_result, _write_file, invoke_with_wave_runtime
+from .profiling import benchmark_module
 from iree.turbine.kernel._support.context import push, pop
 from iree.turbine.kernel.lang import IndexSymbol
+from iree.turbine.runtime.launch import Launchable
+import iree.runtime as rt
 
 
 class WaveKernel:
@@ -49,8 +52,28 @@ class WaveKernel:
         self.bound_scalar_symbols = bound_scalar_symbols
         self.symbols_args_map = symbols_args_map
 
+        if not options.wave_runtime:
+            # 'launchable' decides if function is async or not based on name.
+            self.func_name = options.func_name + (
+                "$async" if options.iree_launch_async else ""
+            )
+
+            def loader(device):
+                vm_instance = device.vm_instance
+                return rt.VmModule.copy_buffer(vm_instance, self.executable)
+
+            self.launchable = Launchable.from_vm_module(
+                loader,
+                entry_point=self.func_name,
+            )
+
+        if options.profile_python_wrapper:
+            self.call_handler = self.invoke_with_profile
+        else:
+            self.call_handler = self.invoke
+
     def __call__(self, *args, **kwargs):
-        return self.invoke(*args, **kwargs)
+        return self.call_handler(*args, **kwargs)
 
     def invoke(self, *args, **kwargs):
         """
@@ -92,19 +115,57 @@ class WaveKernel:
                 dynamic_symbols,
                 self.gpu_func,
             )
-            return self.asm
+        else:
+            self.launchable(
+                *kernel_inputs, *kernel_outputs, *scalar_args, *dynamic_symbols
+            )
 
-        invoke_vmfb(
-            self.executable,
-            self.options,
-            kernel_inputs,
-            kernel_outputs,
-            scalar_args,
-            self.bound_scalar_symbols,
-            dynamic_symbols,
-            self.gpu_func,
-        )
+            if self.options.run_bench:
+                benchmark_flags = {}
+                benchmark_flags["batch_size"] = self.options.benchmark_batch_size
+
+                if self.options.benchmark_repetitions is not None:
+                    benchmark_flags["benchmark_repetitions"] = int(
+                        self.options.benchmark_repetitions
+                    )
+                benchmark_results = benchmark_module(
+                    self.options,
+                    kernel_inputs,
+                    kernel_outputs,
+                    dynamic_symbols,
+                    self.executable,
+                    self.func_name,
+                    **benchmark_flags,
+                )
+                _print_bench_result(benchmark_results, self.options.bench_file)
+
         return self.asm
+
+    def invoke_with_profile(self, *args, **kwargs):
+
+        # Warmup
+        for _ in range(self.options.profile_python_warmup):
+            self.invoke(*args, **kwargs)
+
+        repetitions = self.options.profile_python_repetitions
+        if self.options.profile_python_cprofile:
+            import cProfile
+
+            with cProfile.Profile() as pr:
+                for _ in range(repetitions):
+                    res = self.invoke(*args, **kwargs)
+
+            pr.print_stats(sort="cumulative")
+            return res
+        else:
+            import timeit
+
+            time = timeit.timeit(
+                lambda: self.invoke(*args, **kwargs),
+                number=repetitions,
+            )
+            print(f"Time: {time:.3f}s, {time / repetitions:.6f}s per iteration")
+            return self.invoke(*args, **kwargs)
 
 
 def wave_compile(options: WaveCompileOptions, kernel: "LaunchableWave") -> WaveKernel:
