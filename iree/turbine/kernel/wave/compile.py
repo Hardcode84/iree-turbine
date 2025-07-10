@@ -16,7 +16,7 @@ from .cache import (
     is_cache_enabled,
 )
 from .utils.compile_utils import compile_to_vmfb
-from .utils.run_utils import invoke_vmfb, _write_file
+from .utils.run_utils import invoke_vmfb, _write_file, invoke_with_wave_runtime
 from iree.turbine.kernel._support.context import push, pop
 from iree.turbine.kernel.lang import IndexSymbol
 
@@ -81,6 +81,18 @@ class WaveKernel:
         for sym in self.options.dynamic_symbols:
             arg_idx, dim = self.symbols_args_map[sym]
             dynamic_symbols.append(args[arg_idx].shape[dim])
+
+        if self.options.wave_runtime:
+            invoke_with_wave_runtime(
+                self.options,
+                kernel_inputs,
+                kernel_outputs,
+                scalar_args,
+                self.bound_scalar_symbols,
+                dynamic_symbols,
+                self.gpu_func,
+            )
+            return
 
         invoke_vmfb(
             self.executable,
