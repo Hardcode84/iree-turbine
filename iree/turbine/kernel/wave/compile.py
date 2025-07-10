@@ -92,7 +92,7 @@ class WaveKernel:
                 dynamic_symbols,
                 self.gpu_func,
             )
-            return
+            return self.asm
 
         invoke_vmfb(
             self.executable,
