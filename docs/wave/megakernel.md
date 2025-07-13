@@ -72,6 +72,38 @@ The code above demonstrates Wave's megakernel fusion API through a paged attenti
    - Each lauched block will take work to process sequentially, starting from first phase
    - Use atomic counter to determine how much work was completed, second phase will only start all blocks from the first phase had finished processing
 
+High level execution logic:
+```python
+id = get_block_id()
+if id < block_count_phase_0:
+   phase_0()
+   work_counter += 1;
+else:
+   while work_counter < block_count_phase_0:
+      wait()
+
+   phase_1()
+```
+
+This can also be generalized to the arbitrary number of stages:
+```python
+id = get_block_id()
+if id < block_count_phase_0:
+   phase_0()
+   work_counter += 1;
+if id < (block_count_phase_0 + block_count_phase_1):
+   while work_counter < block_count_phase_0:
+      wait()
+
+   phase_1()
+   work_counter += 1;
+else:
+   while work_counter < (block_count_phase_0 + block_count_phase_1):
+      wait()
+
+   phase_2()
+```
+
 Overall execution flow fill look like this:
 
 ```mermaid
@@ -146,9 +178,9 @@ block-beta
 
 Some observations:
 
-1. **All kernels need to have same number of threads**
-2. **There is bubble in the execution as `phase_1` have to wait for all `phase_0` blocks to complete**
-3. **This approach requires blocks to be scheduled in sequential manner, which is not guaranteed**
+1. All kernels need to have same number of threads
+2. There is bubble in the execution as `phase_1` have to wait for all `phase_0` blocks to complete
+3. This approach requires blocks to be scheduled in sequential manner, which is not guaranteed
 
 ### Handling blocks scheduling order
 
@@ -159,7 +191,7 @@ Some observations:
 
 ### Handling bupples in execution pipeline
 
-Workloads are other scheduled in batches, where each batch data is independent from other batches.
+Workloads are often scheduled in batches, where each batch data is independent from other batches.
 We can exploit it to reduce amount of idling second kernel will need to do.
 
 ```python
@@ -180,7 +212,7 @@ We can exploit it to reduce amount of idling second kernel will need to do.
 ```
 Here, we specify our batch dimension `[S]`
 
-1. Instead of having the single atomic work counter for the kernel, allocate a separeate counter for each batch.
+1. Instead of having the single atomic work counter for the kernel, allocate a separate counter for each batch.
 2. Schedule blocks in the specific `Z` order to minimize waiting time, see the following execution diagram:
 ```mermaid
 block-beta
@@ -235,3 +267,17 @@ block
 end
 ```
 Here, if we have enough batches, `kernel 2 block 0` dependencies will most likely will be completed by the time execution got to it.
+
+Kernel logic will look like:
+```python
+id = get_block_id()
+batch_id = get_batch_id(id)
+if id < block_count_phase_0:
+   phase_0()
+   work_counter[batch_id] += 1;
+else:
+   while work_counter[batch_id] < batch_size:
+      wait()
+
+   phase_1()
+```
