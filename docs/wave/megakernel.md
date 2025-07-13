@@ -7,13 +7,13 @@ This document explains Wave's megakernel optimization, which is a transformation
 The megakernel optimization pass combines multiple separate kernel launches into a single unified kernel execution. This transformation addresses several performance bottlenecks:
 
 1. **Kernel Launch Overhead Reduction**
-   - Avoid python wraper call overhead
+   - Avoid Python wrapper call overhead
    - Avoid tensor conversion overhead
-   - Avoid hip runtime overhead
+   - Avoid HIP runtime overhead
 
-2. **Avoid excution bubbles between kernels**
-   - Avoid idling CU while waiting kernel is fully finished
-   - Subsequent kernels can start work immediately as data becomes available, without waiting for previous kernel to fully finish
+2. **Avoid Execution Bubbles Between Kernels**
+   - Avoid idling compute units while waiting for kernels to fully finish
+   - Subsequent kernels can start work immediately as data becomes available, without waiting for previous kernels to fully finish
 
 ## How It Works
 
@@ -51,8 +51,8 @@ The megakernel optimization pass combines multiple separate kernel launches into
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, wave_output_dtype],
    ):
-      pahse_0(q, k, v, request_indices, kv_indices, logits, logits_max, options=compile_options1)
-      pahse_1(logits, logits_max, request_indices, output, options=compile_options2)
+      phase_0(q, k, v, request_indices, kv_indices, logits, logits_max, options=compile_options1)
+      phase_1(logits, logits_max, request_indices, output, options=compile_options2)
 
    # Call the fused kernel
    fused(q, k, v, request_indices, kv_indices, logits, logits_max, output)
@@ -62,22 +62,22 @@ The megakernel optimization pass combines multiple separate kernel launches into
 The code above demonstrates Wave's megakernel fusion API through a paged attention example.
 
 1. **Fused Megakernel**
-   - `fused`: Combines both phases into a single kernel launch using `@tkw.fuse_kernels` decorator
+   - `fused`: Combines both phases into a single kernel launch using the `@tkw.fuse_kernels` decorator
    - Takes all inputs/outputs needed across both phases
    - Internally compiles `phase_0` and `phase_1` with appropriate compile options
-   - As many as needed kernels can be scheduled in such manner
+   - As many kernels as needed can be scheduled in such a manner
 
 2. **Execution Flow**
-   - Total count of lauched blocks is sum of `phase_0` and `phase_1` blocks
-   - Each lauched block will take work to process sequentially, starting from first phase
-   - Use atomic counter to determine how much work was completed, second phase will only start all blocks from the first phase had finished processing
+   - Total count of launched blocks is the sum of `phase_0` and `phase_1` blocks
+   - Each launched block will take work to process sequentially, starting from the first phase
+   - Uses an atomic counter to determine how much work was completed; the second phase will only start after all blocks from the first phase have finished processing
 
-High level execution logic:
+High-level execution logic:
 ```python
 id = get_block_id()
 if id < block_count_phase_0:
    phase_0()
-   work_counter += 1;
+   work_counter += 1
 else:
    while work_counter < block_count_phase_0:
       wait()
@@ -85,18 +85,18 @@ else:
    phase_1()
 ```
 
-This can also be generalized to the arbitrary number of stages:
+This can also be generalized to an arbitrary number of stages:
 ```python
 id = get_block_id()
 if id < block_count_phase_0:
    phase_0()
-   work_counter += 1;
+   work_counter += 1
 if id < (block_count_phase_0 + block_count_phase_1):
    while work_counter < block_count_phase_0:
       wait()
 
    phase_1()
-   work_counter += 1;
+   work_counter += 1
 else:
    while work_counter < (block_count_phase_0 + block_count_phase_1):
       wait()
@@ -104,7 +104,7 @@ else:
    phase_2()
 ```
 
-Overall execution flow fill look like this:
+Overall execution flow will look like this:
 
 ```mermaid
 block-beta
@@ -178,21 +178,21 @@ block-beta
 
 Some observations:
 
-1. All kernels need to have same number of threads
-2. There is bubble in the execution as `phase_1` have to wait for all `phase_0` blocks to complete
-3. This approach requires blocks to be scheduled in sequential manner, which is not guaranteed
+1. All kernels need to have the same number of threads
+2. There are bubbles in the execution as `phase_1` has to wait for all `phase_0` blocks to complete
+3. This approach requires blocks to be scheduled in a sequential manner, which is not guaranteed
 
-### Handling blocks scheduling order
+### Handling Block Scheduling Order
 
-1. This approach requires blocks to be scheduled in the specific order.
-2. Block scheduling order generally is not guaranteed, instead of relying on HW block ID, introdute the virtual block ID.
-3. Each WG will do `fetch_add` on the global atomic counter at the start to get the sequential unique ID
-4. Delinearize from 1d to Nd block ID if nessesary.
+1. This approach requires blocks to be scheduled in a specific order
+2. Block scheduling order is generally not guaranteed; instead of relying on hardware block ID, introduce a virtual block ID
+3. Each workgroup will do `fetch_add` on the global atomic counter at the start to get a sequential unique ID
+4. Delinearize from 1D to ND block ID if necessary
 
-### Handling bupples in execution pipeline
+### Handling Bubbles in Execution Pipeline
 
-Workloads are often scheduled in batches, where each batch data is independent from other batches.
-We can exploit it to reduce amount of idling second kernel will need to do.
+Workloads are often scheduled in batches, where each batch's data is independent from other batches.
+We can exploit this to reduce the amount of idling the second kernel will need to do.
 
 ```python
    # Fuse and compile the kernels
@@ -207,13 +207,15 @@ We can exploit it to reduce amount of idling second kernel will need to do.
         logits_max: tkl.Memory[U, S, B, GLOBAL_ADDRESS_SPACE, tkl.f32],
         output: tkl.Memory[S, B, N, GLOBAL_ADDRESS_SPACE, wave_output_dtype],
    ):
-      pahse_0(q, k, v, request_indices, kv_indices, logits, logits_max, options=compile_options1)
-      pahse_1(logits, logits_max, request_indices, output, options=compile_options2)
+      phase_0(q, k, v, request_indices, kv_indices, logits, logits_max, options=compile_options1)
+      phase_1(logits, logits_max, request_indices, output, options=compile_options2)
 ```
-Here, we specify our batch dimension `[S]`
 
-1. Instead of having the single atomic work counter for the kernel, allocate a separate counter for each batch.
-2. Schedule blocks in the specific `Z` order to minimize waiting time, see the following execution diagram:
+Here, we specify our batch dimension `[S]`:
+
+1. Instead of having a single atomic work counter for the kernel, allocate a separate counter for each batch
+2. Schedule blocks in a specific Z order to minimize waiting time; see the following execution diagram:
+
 ```mermaid
 block-beta
 block
@@ -266,7 +268,8 @@ block
     end
 end
 ```
-Here, if we have enough batches, `kernel 2 block 0` dependencies will most likely will be completed by the time execution got to it.
+
+Here, if we have enough batches, `kernel 2 block 0` dependencies will most likely be completed by the time execution gets to it.
 
 Kernel logic will look like:
 ```python
@@ -274,7 +277,7 @@ id = get_block_id()
 batch_id = get_batch_id(id)
 if id < block_count_phase_0:
    phase_0()
-   work_counter[batch_id] += 1;
+   work_counter[batch_id] += 1
 else:
    while work_counter[batch_id] < batch_size:
       wait()
