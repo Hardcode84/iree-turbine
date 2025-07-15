@@ -105,7 +105,7 @@ def ref_paged_attn(
                 .logical_not()
             )
             mask |= sliding_window_mask
-        if soft_cap is not None:
+        if soft_cap is not None and soft_cap > 0:
             attn = soft_cap * torch.tanh(attn / soft_cap)
         if causal:
             attn.masked_fill_(mask, float("-inf"))
@@ -194,6 +194,7 @@ def load_inputs(directory):
     ],
 )
 @param_bool("use_wave_runtime", "wr")
+@pytest.mark.parametrize("logit_cap", [0.0, 30.0])
 def testPagedFlashDecoding(
     shape: tuple[int],
     dtype: torch.dtype,
@@ -201,6 +202,7 @@ def testPagedFlashDecoding(
     num_kv_splits: int,
     mfma_variant: MMAType,
     use_wave_runtime: bool,
+    logit_cap: float,
     request,
 ):
     kv_lens = shape[6]
@@ -247,8 +249,6 @@ def testPagedFlashDecoding(
         shape.head_size = query.shape[2]
         shape.num_kv_heads = key_cache.shape[2]
         shape.head_size_kv = value_cache.shape[3]
-
-    logit_cap = 30.0
 
     # Run the wave kernel.
     (
